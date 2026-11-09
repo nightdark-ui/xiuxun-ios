@@ -1,0 +1,13 @@
+﻿# 编译产物与本地依赖
+POC/build/
+POC/Pods/
+POC/*.xcworkspace
+POC/*.xcodeproj
+POC/Podfile.lock
+
+# 打包文件
+*.zip
+
+# 系统杂物
+.DS_Store
+Thumbs.db

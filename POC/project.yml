@@ -1,0 +1,32 @@
+name: XiuxunPOC
+options:
+  bundleIdPrefix: com.xiuxun
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+targets:
+  XiuxunPOC:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: 绣寻探针
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.xiuxun.poc
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ENABLE_BITCODE: "NO"
+        # 让 Sideloadly 能签：不要在这里固定签名身份
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - pod: onnxruntime-objc

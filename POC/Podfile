@@ -1,0 +1,6 @@
+platform :ios, '15.0'
+use_frameworks!
+
+target 'XiuxunPOC' do
+  pod 'onnxruntime-objc', '~> 1.16.3'
+end
