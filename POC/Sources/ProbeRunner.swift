@@ -3,8 +3,8 @@ import Combine
 import onnxruntime_objc
 
 /// 综合探针 v3：
-///   A. 图像链路：JPEG → 灰度 → 裁切 → BICUBIC 224 → 归一化，与 PC 的张量比对
-///   B. 模型链路：用自己的张量跑模型，与 PC 的特征比对
+///   A. 图像链路：JPEG → 灰度 → 裁切 → BICUBIC 224 → 归一化，与 PC 张量比对
+///   B. 模型链路：用自己的张量跑模型，与 PC 特征比对
 ///   C. 速度：模型只加载一次，连跑 3 次取最快
 enum ProbePhase: String {
     case idle = "未运行"
@@ -14,14 +14,11 @@ enum ProbePhase: String {
 }
 
 struct ProbeReport {
-    // A. 图像链路
     let tensorCosine: Double
     let tensorMaxDiff: Double
     let tensorMeanDiff: Double
-    // B. 模型链路
     let featureCosine: Double
     let featureMaxDiff: Double
-    // C. 速度
     let loadMs: Double
     let runMs: [Double]
     let log: String
@@ -49,6 +46,7 @@ final class ProbeRunner: ObservableObject {
     @Published var runMs: Double = .nan
     @Published var loadMs: Double = .nan
     @Published var phase: ProbePhase = .idle
+    @Published var lastCrashStep: String = ProbeTrace.last
 
     private static let size = 224
     private static let width = 384
@@ -61,6 +59,9 @@ final class ProbeRunner: ObservableObject {
     func run() {
         phase = .running
         log = ""
+        lastCrashStep = ""
+        ProbeTrace.clear()
+        ProbeTrace.mark(.start)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
@@ -73,11 +74,14 @@ final class ProbeRunner: ObservableObject {
                     self.runMs = report.runMs.min() ?? .nan
                     self.log = report.log
                     self.phase = .done
+                    self.lastCrashStep = ""
+                    ProbeTrace.clear()
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.phase = .failed
-                    self.log = "❌ \(error.localizedDescription)"
+                    self.lastCrashStep = ProbeTrace.last
+                    self.log = "❌ 失败于「\(ProbeTrace.last)」：\(error.localizedDescription)"
                 }
             }
         }
@@ -87,6 +91,7 @@ final class ProbeRunner: ObservableObject {
         lock.lock()
         defer { lock.unlock() }
         if cachedSession != nil { return 0 }
+        ProbeTrace.mark(.loadSession)
         guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
             throw ProbeError.missingFile("模型没打包进 App")
         }
@@ -123,25 +128,27 @@ final class ProbeRunner: ObservableObject {
         guard refData.count == ours.count * 4 else {
             throw ProbeError.badInput("probe_input.bin 大小 \(refData.count)，应为 \(ours.count * 4)")
         }
-        var reference = [Float](repeating: 0, count: ours.count)
-        refData.withUnsafeBytes { raw in
-            let floats = raw.bindMemory(to: Float.self)
-            for i in 0..<ours.count { reference[i] = floats[i] }
-        }
 
-        var tDot = 0.0, tA = 0.0, tB = 0.0, tMax = 0.0, tAbs = 0.0
-        for i in 0..<ours.count {
-            let a = Double(ours[i])
-            let b = Double(reference[i])
-            tDot += a * b
-            tA += a * a
-            tB += b * b
-            let d = abs(a - b)
-            tMax = max(tMax, d)
-            tAbs += d
+        var tensorCosine = 0.0
+        var tensorMaxDiff = 0.0
+        var tensorMeanDiff = 0.0
+        refData.withUnsafeBytes { raw in
+            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
+            var dot = 0.0, normA = 0.0, normB = 0.0, maxDiff = 0.0, absSum = 0.0
+            for i in 0..<ours.count {
+                let a = Double(ours[i])
+                let b = Double(base[i])
+                dot += a * b
+                normA += a * a
+                normB += b * b
+                let d = abs(a - b)
+                maxDiff = max(maxDiff, d)
+                absSum += d
+            }
+            tensorCosine = dot / (sqrt(normA) * sqrt(normB))
+            tensorMaxDiff = maxDiff
+            tensorMeanDiff = absSum / Double(ours.count)
         }
-        let tensorCosine = tDot / (sqrt(tA) * sqrt(tB))
-        let tensorMeanDiff = tAbs / Double(ours.count)
 
         // ---------- B. 模型链路 ----------
         let loadMs = try ensureSession()
@@ -155,12 +162,24 @@ final class ProbeRunner: ObservableObject {
         var featureMaxDiff = 0.0
 
         for _ in 0..<3 {
+            ProbeTrace.mark(.runModel)
             let started = Date()
-            let data = Data(bytes: ours, count: ours.count * 4)
+            var flat = ours
+            let data = flat.withUnsafeBufferPointer { buffer -> Data in
+                Data(buffer: buffer)
+            }
+            flat.removeAll(keepingCapacity: false)
+
+            let shape: [NSNumber] = [
+                NSNumber(value: 1),
+                NSNumber(value: 3),
+                NSNumber(value: size),
+                NSNumber(value: size),
+            ]
             let tensor = try ORTValue(
                 tensorData: NSMutableData(data: data),
                 elementType: .float,
-                shape: [1, 3, NSNumber(value: size), NSNumber(value: size)]
+                shape: shape
             )
             let outputs = try session.run(
                 withInputs: [cachedInputName: tensor],
@@ -170,12 +189,12 @@ final class ProbeRunner: ObservableObject {
             guard let firstOutput = outputs.values.first else { throw ProbeError.badOutput("模型没有输出") }
             let outputData = try firstOutput.tensorData() as Data
             let floatCount = outputData.count / 4
-            guard floatCount >= width else { throw ProbeError.badOutput("输出太小") }
+            guard floatCount >= width else { throw ProbeError.badOutput("输出太小：\(floatCount) 个 float") }
 
             var cls = [Double](repeating: 0, count: width)
             outputData.withUnsafeBytes { raw in
-                let floats = raw.bindMemory(to: Float.self)
-                for i in 0..<width { cls[i] = Double(floats[i]) }
+                guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
+                for i in 0..<width { cls[i] = Double(base[i]) }
             }
             var norm = 0.0
             for v in cls { norm += v * v }
@@ -183,7 +202,8 @@ final class ProbeRunner: ObservableObject {
             if norm > 1e-9 { for i in 0..<width { cls[i] /= norm } }
 
             var dot = 0.0, na = 0.0, nb = 0.0, mx = 0.0
-            for i in 0..<min(width, expected.count) {
+            let limit = min(width, expected.count)
+            for i in 0..<limit {
                 dot += cls[i] * expected[i]
                 na += cls[i] * cls[i]
                 nb += expected[i] * expected[i]
@@ -194,23 +214,25 @@ final class ProbeRunner: ObservableObject {
             timings.append(Date().timeIntervalSince(started) * 1000)
         }
 
+        ProbeTrace.mark(.done)
+
         let tensorVerdict = tensorCosine >= 0.9999
             ? "✅ 图像链路一致"
-            : (tensorCosine >= 0.999 ? "⚠️ 图像链路接近，可能有 1 级灰度差" : "❌ 图像链路不一致")
+            : (tensorCosine >= 0.999 ? "⚠️ 接近，可能有 1 级灰度差" : "❌ 不一致")
         let featureVerdict = featureCosine >= 0.999
             ? "✅ 特征一致"
             : (featureCosine >= 0.99 ? "⚠️ 特征接近" : "❌ 特征不一致")
 
         let runs = timings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
         let log = """
-        【A. 图像链路】JPEG → 灰度 → 裁切 → BICUBIC \(size) → 归一化
+        【A. 图像链路】
           原图：\(prepared.gray.width)×\(prepared.gray.height)
           张量余弦：\(String(format: "%.8f", tensorCosine))
-          最大单项差：\(String(format: "%.6f", tMax))
+          最大单项差：\(String(format: "%.6f", tensorMaxDiff))
           平均单项差：\(String(format: "%.6f", tensorMeanDiff))
           \(tensorVerdict)
 
-        【B. 特征链路】用本机张量跑模型
+        【B. 特征链路】
           特征余弦：\(String(format: "%.8f", featureCosine))
           最大单项差：\(String(format: "%.8f", featureMaxDiff))
           \(featureVerdict)
@@ -221,7 +243,7 @@ final class ProbeRunner: ObservableObject {
         """
         return ProbeReport(
             tensorCosine: tensorCosine,
-            tensorMaxDiff: tMax,
+            tensorMaxDiff: tensorMaxDiff,
             tensorMeanDiff: tensorMeanDiff,
             featureCosine: featureCosine,
             featureMaxDiff: featureMaxDiff,

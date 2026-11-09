@@ -2,16 +2,39 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
-/// 与 PC（Python + Pillow + OpenCV）对齐的图像预处理。
+/// 与 PC（Python + Pillow + OpenCV）对齐的图像预处理（v3a）。
 ///
-/// 本文件只做 v3a 的部分：
-///   1. 解码 JPEG（不做 EXIF 旋转，POC 用的图没有方向标记）
-///   2. 转灰度（PIL 的 L 通道公式：19595/38470/7471 定点）
-///   3. 中心方形裁切（fraction = 1.0）
-///   4. BICUBIC 缩放到 224×224（Pillow 语义：下采样时按 in/out 放大 support）
-///   5. (v/255 - mean) / std，输出 NCHW
-///
-/// CLAHE 不在这里做：它必须由 OpenCV 执行才能逐位一致，留到接 OpenCV 时补。
+/// 崩溃排查辅助：每个阶段开始前会把阶段名写进 UserDefaults，
+/// 即使进程崩溃，下次启动也能看到"上次跑到哪一步"。
+enum ProbeStep: String {
+    case start = "开始"
+    case decode = "解码图片"
+    case gray = "转灰度"
+    case crop = "裁切"
+    case resize = "BICUBIC 缩放"
+    case tensor = "归一化"
+    case loadSession = "加载模型"
+    case runModel = "模型推理"
+    case done = "完成"
+}
+
+enum ProbeTrace {
+    private static let key = "probe.lastStep"
+
+    static func mark(_ step: ProbeStep) {
+        UserDefaults.standard.set(step.rawValue, forKey: key)
+        UserDefaults.standard.synchronize()
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    static var last: String {
+        UserDefaults.standard.string(forKey: key) ?? ""
+    }
+}
+
 enum PilImaging {
 
     struct GrayImage {
@@ -23,6 +46,7 @@ enum PilImaging {
     // ---------------- 解码 ----------------
 
     static func loadGray(from url: URL) throws -> GrayImage {
+        ProbeTrace.mark(.decode)
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw ProbeError.badInput("图片解码失败：\(url.lastPathComponent)")
@@ -31,33 +55,39 @@ enum PilImaging {
     }
 
     static func gray(from cgImage: CGImage) throws -> GrayImage {
+        ProbeTrace.mark(.gray)
         let width = cgImage.width
         let height = cgImage.height
         guard width > 0, height > 0 else { throw ProbeError.badInput("图片尺寸为 0") }
 
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        let byteCount = width * height * 4
+        var rgba = [UInt8](repeating: 0, count: byteCount)
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        // noneSkipLast：不预乘 alpha，保持原始 RGB 值
         let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
-        guard let context = CGContext(
-            data: &rgba,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo
-        ) else {
-            throw ProbeError.badInput("无法创建绘图上下文")
-        }
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
 
-        // PIL 的 convert("L")：L = (r*19595 + g*38470 + b*7471 + 32768) >> 16
+        // 用 withUnsafeMutableBytes 拿到稳定的缓冲区指针（比传 &array 安全）
+        let ok: Bool = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let base = buffer.baseAddress else { return false }
+            guard let context = CGContext(
+                data: base,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: colorSpace,
+                bitmapInfo: bitmapInfo
+            ) else { return false }
+            context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard ok else { throw ProbeError.badInput("无法创建绘图上下文") }
+
         var grayPixels = [UInt8](repeating: 0, count: width * height)
         for i in 0..<(width * height) {
-            let r = Int(rgba[i * 4])
-            let g = Int(rgba[i * 4 + 1])
-            let b = Int(rgba[i * 4 + 2])
+            let base = i * 4
+            let r = Int(rgba[base])
+            let g = Int(rgba[base + 1])
+            let b = Int(rgba[base + 2])
             let value = (r * 19595 + g * 38470 + b * 7471 + 32768) >> 16
             grayPixels[i] = UInt8(min(255, max(0, value)))
         }
@@ -67,9 +97,14 @@ enum PilImaging {
     // ---------------- 裁切 ----------------
 
     static func centerCrop(_ image: GrayImage, fraction: Double) -> GrayImage {
-        let side = max(32, Int(Double(min(image.width, image.height)) * fraction))
-        let left = (image.width - side) / 2
-        let top = (image.height - side) / 2
+        ProbeTrace.mark(.crop)
+        let shortSide = min(image.width, image.height)
+        let scaled = Double(shortSide) * fraction
+        var side = Int(scaled.isFinite ? scaled.rounded() : Double(shortSide))
+        side = max(1, min(side, shortSide))
+        let left = max(0, min((image.width - side) / 2, image.width - side))
+        let top = max(0, min((image.height - side) / 2, image.height - side))
+
         var output = [UInt8](repeating: 0, count: side * side)
         for y in 0..<side {
             let srcRow = (top + y) * image.width + left
@@ -85,83 +120,95 @@ enum PilImaging {
     private static let a = -0.5
 
     private static func bicubic(_ x: Double) -> Double {
-        let x = abs(x)
-        if x <= 1.0 {
-            return ((a + 2.0) * x - (a + 3.0)) * x * x + 1.0
-        } else if x < 2.0 {
-            return (((x - 5.0) * x + 8.0) * x - 4.0) * a
+        let value = abs(x)
+        if value <= 1.0 {
+            return ((a + 2.0) * value - (a + 3.0)) * value * value + 1.0
+        } else if value < 2.0 {
+            return (((value - 5.0) * value + 8.0) * value - 4.0) * a
         }
         return 0.0
     }
 
-    /// 一维权重表：下采样时 support 会按 in/out 放大（Pillow 的抗锯齿行为）
-    private static func coefficients(inSize: Int, outSize: Int) -> (support: Int, bounds: [(Int, Int)], weights: [[Double]]) {
-        let scale = Double(inSize) / Double(outSize)
-        var filterscale = 1.0
+    private struct Axis {
+        var starts: [Int] = []
+        var weights: [[Double]] = []
+    }
+
+    private static func coefficients(inSize: Int, outSize: Int) -> Axis {
+        let inS = max(1, inSize)
+        let outS = max(1, outSize)
+        let scale = Double(inS) / Double(outS)
+        var filterScale = 1.0
         var support = 2.0
         if scale > 1.0 {
-            filterscale = scale
-            support *= filterscale
+            filterScale = scale
+            support *= filterScale
         }
-        let supportInt = Int(ceil(support))
-        var bounds: [(Int, Int)] = []
-        var weights: [[Double]] = []
-        for out in 0..<outSize {
+        var axis = Axis()
+        for out in 0..<outS {
             let center = (Double(out) + 0.5) * scale
-            var xmin = Int(floor(center - support))
-            var xmax = Int(ceil(center + support))
-            xmin = max(0, xmin)
-            xmax = min(inSize, xmax)
-            if xmax <= xmin { xmax = min(inSize, xmin + 1) }
+            var xmin = Int((center - support).rounded(.down))
+            var xmax = Int((center + support).rounded(.up))
+            xmin = max(0, min(xmin, inS - 1))
+            xmax = max(xmin + 1, min(xmax, inS))
             var row: [Double] = []
+            row.reserveCapacity(xmax - xmin)
             var sum = 0.0
             for x in xmin..<xmax {
-                let w = bicubic((Double(x) + 0.5 - center) / filterscale)
+                let w = bicubic((Double(x) + 0.5 - center) / filterScale)
                 row.append(w)
                 sum += w
             }
             if sum != 0 {
                 for i in 0..<row.count { row[i] /= sum }
             }
-            bounds.append((xmin, xmax))
-            weights.append(row)
+            axis.starts.append(xmin)
+            axis.weights.append(row)
         }
-        return (supportInt, bounds, weights)
+        return axis
     }
 
     static func resizeBicubic(_ image: GrayImage, width outW: Int, height outH: Int) -> GrayImage {
-        // 横向
-        let horizontal = coefficients(inSize: image.width, outSize: outW)
-        var temp = [Double](repeating: 0, count: outW * image.height)
+        ProbeTrace.mark(.resize)
+        let outWidth = max(1, outW)
+        let outHeight = max(1, outH)
+        let horizontal = coefficients(inSize: image.width, outSize: outWidth)
+        var temp = [Double](repeating: 0, count: outWidth * image.height)
+
         for y in 0..<image.height {
             let srcRow = y * image.width
-            for x in 0..<outW {
-                let (xmin, _) = horizontal.bounds[x]
+            for x in 0..<outWidth {
+                let start = horizontal.starts[x]
                 let row = horizontal.weights[x]
                 var sum = 0.0
                 for (i, w) in row.enumerated() {
-                    sum += w * Double(image.pixels[srcRow + xmin + i])
+                    let index = srcRow + start + i
+                    if index >= 0 && index < image.pixels.count {
+                        sum += w * Double(image.pixels[index])
+                    }
                 }
-                temp[y * outW + x] = sum
+                temp[y * outWidth + x] = sum
             }
         }
 
-        // 纵向
-        let vertical = coefficients(inSize: image.height, outSize: outH)
-        var output = [UInt8](repeating: 0, count: outW * outH)
-        for y in 0..<outH {
-            let (ymin, _) = vertical.bounds[y]
+        let vertical = coefficients(inSize: image.height, outSize: outHeight)
+        var output = [UInt8](repeating: 0, count: outWidth * outHeight)
+        for y in 0..<outHeight {
+            let start = vertical.starts[y]
             let row = vertical.weights[y]
-            for x in 0..<outW {
+            for x in 0..<outWidth {
                 var sum = 0.0
                 for (i, w) in row.enumerated() {
-                    sum += w * temp[(ymin + i) * outW + x]
+                    let index = (start + i) * outWidth + x
+                    if index >= 0 && index < temp.count {
+                        sum += w * temp[index]
+                    }
                 }
-                let rounded = Int(sum + 0.5)
-                output[y * outW + x] = UInt8(min(255, max(0, rounded)))
+                let rounded = (sum + 0.5).rounded(.down)
+                output[y * outWidth + x] = UInt8(min(255.0, max(0.0, rounded)))
             }
         }
-        return GrayImage(width: outW, height: outH, pixels: output)
+        return GrayImage(width: outWidth, height: outHeight, pixels: output)
     }
 
     // ---------------- 归一化 ----------------
@@ -169,8 +216,8 @@ enum PilImaging {
     private static let mean: [Double] = [0.485, 0.456, 0.406]
     private static let std: [Double] = [0.229, 0.224, 0.225]
 
-    /// 灰度图 → NCHW float32（三个通道相同，因为 PC 也是灰度复制成 RGB）
     static func toTensor(_ image: GrayImage) -> [Float] {
+        ProbeTrace.mark(.tensor)
         let count = image.width * image.height
         var tensor = [Float](repeating: 0, count: count * 3)
         for channel in 0..<3 {
@@ -184,7 +231,6 @@ enum PilImaging {
         return tensor
     }
 
-    /// 完整流程：JPEG → 张量
     static func prepareTensor(
         from url: URL,
         size: Int = 224,

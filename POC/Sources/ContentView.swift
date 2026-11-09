@@ -16,6 +16,21 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
 
+                // 崩溃断点：如果上次运行中途崩了，这里会显示停在哪一步
+                if !runner.lastCrashStep.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text("上次中断在：\(runner.lastCrashStep)")
+                            .font(.footnote)
+                            .foregroundColor(.orange)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.12))
+                    .cornerRadius(10)
+                }
+
                 Button {
                     runner.run()
                 } label: {
@@ -58,7 +73,7 @@ struct ContentView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("判定标准").font(.footnote).bold()
-                    Text("图像链路余弦 ≥ 0.9999 → 缩放/归一化与 PC 一致（关键）")
+                    Text("图像链路余弦 ≥ 0.9999 → 缩放/归一化与 PC 一致")
                         .font(.caption).foregroundColor(.secondary)
                     Text("特征余弦 ≥ 0.999 → 模型输出一致")
                         .font(.caption).foregroundColor(.secondary)
