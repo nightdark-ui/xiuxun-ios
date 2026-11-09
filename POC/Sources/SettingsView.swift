@@ -5,9 +5,6 @@ import Combine
 final class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
-    @Published var fastMode: Bool {
-        didSet { UserDefaults.standard.set(fastMode, forKey: "set.fastMode") }
-    }
     @Published var deepReview: Bool {
         didSet { UserDefaults.standard.set(deepReview, forKey: "set.deepReview") }
     }
@@ -26,7 +23,6 @@ final class AppSettings: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        fastMode = defaults.bool(forKey: "set.fastMode")
         deepReview = defaults.bool(forKey: "set.deepReview")
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
@@ -39,7 +35,7 @@ final class AppSettings: ObservableObject {
         var options = SearchOptions()
         options.rotationEnabled = rotationEnabled
         options.mirrorEnabled = mirrorEnabled
-        options.fastMode = fastMode
+        options.fastMode = false   // 已移除快速模式：只转 4 角度会影响精度
         options.deepReview = deepReview
         options.resultCount = resultCount
         options.baseInputSize = base336 ? 336 : 224
@@ -54,7 +50,6 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
-                Toggle("快速模式（只转 4 个角度）", isOn: $settings.fastMode)
                 Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
                 Toggle("镜像搜索（更慢，默认关）", isOn: $settings.mirrorEnabled)
             } header: {
