@@ -2,36 +2,58 @@ name: Build iOS POC
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 40
+    runs-on: macos-latest
+    timeout-minutes: 45
 
     steps:
-      - name: 取代码
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 选 Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
-
-      - name: 安装工具
+      - name: Show toolchain
         run: |
-          brew install xcodegen
-          gem install cocoapods --no-document || true
+          echo "--- xcodebuild ---"
+          xcodebuild -version || true
+          echo "--- swift ---"
+          swift --version || true
+          echo "--- xcodegen ---"
+          which xcodegen || echo "no xcodegen"
+          echo "--- pod ---"
+          which pod || echo "no pod"
 
-      - name: 生成工程并装依赖
+      - name: Install xcodegen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Ensure CocoaPods
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            gem install cocoapods --no-document
+          fi
+          pod --version
+
+      - name: Generate project and install pods
         working-directory: POC
         run: |
           xcodegen generate
           pod install --repo-update
 
-      - name: 编译（不签名）
+      - name: Build (unsigned)
         working-directory: POC
         run: |
-          xcodebuild -workspace XiuxunPOC.xcworkspace \
+          set -o pipefail
+          xcodebuild \
+            -workspace XiuxunPOC.xcworkspace \
             -scheme XiuxunPOC \
             -configuration Release \
             -sdk iphoneos \
@@ -39,9 +61,9 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            build 2>&1 | tee /tmp/build.log
 
-      - name: 打包成 ipa
+      - name: Package IPA
         working-directory: POC
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
@@ -51,9 +73,17 @@ jobs:
           zip -r XiuxunPOC-unsigned.ipa Payload
           ls -lh XiuxunPOC-unsigned.ipa
 
-      - name: 上传产物
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: XiuxunPOC-unsigned-ipa
           path: POC/XiuxunPOC-unsigned.ipa
           retention-days: 14
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 7
