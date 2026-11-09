@@ -7,11 +7,11 @@ struct ContentView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("成业绣 DINOv2 数值探针")
+                    Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("验证 ONNX Runtime 在 iOS 上跑 DINOv2-small 的数值与速度。")
+                    Text("A 图像链路（缩放/归一化）+ B 模型数值 + C 推理速度")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
@@ -21,7 +21,7 @@ struct ContentView: View {
                 } label: {
                     HStack {
                         Spacer()
-                        Text(isBusy ? "正在运行…" : "开始验证").bold()
+                        Text(isBusy ? "运行中…" : "开始验证").bold()
                         Spacer()
                     }
                     .padding(.vertical, 14)
@@ -35,29 +35,21 @@ struct ContentView: View {
                     .font(.footnote)
                     .foregroundColor(.secondary)
 
-                if !runner.cosine.isNaN {
+                if !runner.tensorCosine.isNaN {
                     HStack(spacing: 10) {
-                        metric("余弦", String(format: "%.6f", runner.cosine))
-                        metric("最大差", String(format: "%.6f", runner.maxAbsDiff))
-                        metric(
-                            "纯推理",
-                            runner.runMs.isEmpty
-                                ? "-"
-                                : String(format: "%.0f ms", runner.runMs.min() ?? 0)
-                        )
+                        metric("图像链路余弦", String(format: "%.6f", runner.tensorCosine))
+                        metric("最大差", String(format: "%.5f", runner.tensorMaxDiff))
                     }
                     HStack(spacing: 10) {
+                        metric("特征余弦", String(format: "%.6f", runner.featureCosine))
+                        metric("纯推理", String(format: "%.0f ms", runner.runMs))
                         metric("加载", runner.loadMs > 0 ? String(format: "%.0f ms", runner.loadMs) : "复用")
-                        metric(
-                            "三次推理",
-                            runner.runMs.map { String(format: "%.0f", $0) }.joined(separator: " / ")
-                        )
                     }
                 }
 
-                if !runner.message.isEmpty {
-                    Text(runner.message)
-                        .font(.system(.footnote, design: .monospaced))
+                if !runner.log.isEmpty {
+                    Text(runner.log)
+                        .font(.system(size: 12, design: .monospaced))
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(.secondarySystemBackground))
@@ -65,15 +57,15 @@ struct ContentView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("怎么读这组数").font(.footnote).bold()
-                    Text("余弦 ≥ 0.999 → 数值与 PC/安卓一致")
+                    Text("判定标准").font(.footnote).bold()
+                    Text("图像链路余弦 ≥ 0.9999 → 缩放/归一化与 PC 一致（关键）")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("“纯推理”取三次里最快的一次，代表这台 iPhone 跑一次 224 前向的真实耗时")
+                    Text("特征余弦 ≥ 0.999 → 模型输出一致")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("点第二次按钮时“加载”会显示复用，说明模型没有重复加载")
+                    Text("纯推理取三次最快，用来估算整次搜索耗时")
                         .font(.caption).foregroundColor(.secondary)
                 }
-                .padding(.top, 8)
+                .padding(.top, 6)
             }
             .padding(20)
         }
@@ -83,9 +75,9 @@ struct ContentView: View {
         VStack(spacing: 4) {
             Text(title).font(.caption2).foregroundColor(.secondary)
             Text(value)
-                .font(.system(.caption, design: .monospaced))
+                .font(.system(size: 13, design: .monospaced))
                 .bold()
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.55)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
