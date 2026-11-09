@@ -51,10 +51,10 @@
 ## 三、把工程推上去（用 GitHub Desktop，最省事）
 
 1. 安装并登录 GitHub Desktop
-2. 把本目录（`ios/` 里的全部内容）解压到一个固定位置，例如 `D:\xiuxun-ios\`
+2. 本目录（`D:\AI搜图IOS版开发\04-iOS移植`）已经是初始化好的 git 仓库，不用解压、不用复制
    - 目录结构应该是：
      ```
-     D:\xiuxun-ios\
+     D:\AI搜图IOS版开发\04-iOS移植\
      ├── .github\workflows\ios-poc.yml
      └── POC\
          ├── project.yml
