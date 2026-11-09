@@ -9,6 +9,9 @@ final class AppState: ObservableObject {
     @Published var progress: InstallProgress = InstallProgress()
     @Published var message: String = ""
     @Published var errorText: String = ""
+    @Published var updateSummary: String = ""
+    @Published var updateReady: Bool = false
+    @Published var updating: Bool = false
 
     @Published var serverAddress: String {
         didSet { UserDefaults.standard.set(serverAddress, forKey: Self.addressKey) }
@@ -16,6 +19,8 @@ final class AppState: ObservableObject {
 
     private static let addressKey = "gallery.serverAddress"
     private let installer = GalleryInstaller()
+    private let updater = GalleryUpdater()
+    private var pendingPlan: UpdatePlan?
     private var cancelRequested = false
     private(set) var package: GalleryPackage?
 
@@ -85,6 +90,72 @@ final class AppState: ObservableObject {
                     } else {
                         self.errorText = error.localizedDescription
                     }
+                }
+            }
+        }
+    }
+
+    /// 检查服务端是否有新款
+    func checkUpdate() {
+        let address = serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !address.isEmpty else {
+            errorText = "请先填写电脑上的地址"
+            return
+        }
+        guard !updating else { return }
+        updateSummary = "检查中…"
+        updateReady = false
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                let plan = try self.updater.check(serverBase: address)
+                DispatchQueue.main.async {
+                    self.pendingPlan = plan
+                    self.updateSummary = plan.summary
+                    self.updateReady = plan.hasChanges && plan.canAppend
+                    if plan.hasChanges && !plan.canAppend {
+                        self.updateSummary = "款顺序有变化，需要整包重下（点上面重新导入）"
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.updateSummary = ""
+                    self.errorText = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// 执行增量更新
+    func applyUpdate() {
+        guard let plan = pendingPlan, !updating else { return }
+        let address = serverAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        updating = true
+        errorText = ""
+        progress = InstallProgress(phase: "准备更新…")
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                try self.updater.apply(
+                    plan: plan,
+                    serverBase: address,
+                    progress: { value in
+                        DispatchQueue.main.async { self.progress = value }
+                    }
+                )
+                DispatchQueue.main.async {
+                    self.updating = false
+                    self.updateReady = false
+                    self.pendingPlan = nil
+                    self.loadGallery()
+                    self.updateSummary = "已更新到 \(self.galleryCount) 款"
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.updating = false
+                    self.errorText = error.localizedDescription
                 }
             }
         }

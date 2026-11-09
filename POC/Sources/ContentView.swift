@@ -60,6 +60,41 @@ struct ContentView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+                HStack(spacing: 10) {
+                    Button {
+                        app.checkUpdate()
+                    } label: {
+                        Text("检查更新").font(.footnote).bold()
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(Color(red: 0.20, green: 0.50, blue: 0.75))
+                            .foregroundColor(.white).cornerRadius(14)
+                    }
+                    .disabled(app.updating)
+
+                    if app.updateReady {
+                        Button {
+                            app.applyUpdate()
+                        } label: {
+                            Text("立即更新").font(.footnote).bold()
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(Color(red: 0.95, green: 0.40, blue: 0.13))
+                                .foregroundColor(.white).cornerRadius(14)
+                        }
+                        .disabled(app.updating)
+                    }
+                    Spacer()
+                }
+
+                if !app.updateSummary.isEmpty {
+                    Text(app.updateSummary).font(.caption).foregroundColor(.secondary)
+                }
+
+                if app.updating {
+                    ProgressView(value: app.progress.fraction)
+                    Text("\(app.progress.phase)  \(app.progress.text)")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+
                 Button(role: .destructive) {
                     app.clearGallery()
                 } label: {
