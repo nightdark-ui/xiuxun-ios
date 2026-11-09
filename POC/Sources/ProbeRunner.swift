@@ -2,10 +2,13 @@ import Foundation
 import Combine
 import onnxruntime_objc
 
-/// 综合探针 v3：
+/// 综合探针 v4：
 ///   A. 图像链路：JPEG → 灰度 → 裁切 → BICUBIC 224 → 归一化，与 PC 张量比对
-///   B. 模型链路：用自己的张量跑模型，与 PC 特征比对
-///   C. 速度：模型只加载一次，连跑 3 次取最快
+///   B. 模型链路：先用 PC 参考张量跑一遍，再用自算张量跑（A/B）
+///   C. 速度：每次推理都重新建 session（与 v1 相同的调用方式，最保守）
+///
+/// v3 用了「静态缓存 session + NSLock + 嵌套函数」，结果 session.run 崩溃；
+/// v1 是「每次新建 session」且成功，所以这里退回 v1 的调用方式。
 enum ProbePhase: String {
     case idle = "未运行"
     case running = "运行中…"
@@ -17,9 +20,9 @@ struct ProbeReport {
     let tensorCosine: Double
     let tensorMaxDiff: Double
     let tensorMeanDiff: Double
+    let refCosine: Double
     let featureCosine: Double
     let featureMaxDiff: Double
-    let loadMs: Double
     let runMs: [Double]
     let log: String
 }
@@ -52,18 +55,15 @@ final class ProbeRunner: ObservableObject {
     private static let size = 224
     private static let width = 384
 
-    private static var cachedSession: ORTSession?
-    private static var cachedInputName = ""
-    private static var cachedOutputNames: Set<String> = []
-    private static let lock = NSLock()
-
     func run() {
         phase = .running
         log = ""
         lastCrashStep = ""
+        lastNote = ""
         ProbeTrace.clear()
         ProbeTrace.clearNote()
         ProbeTrace.mark(.start)
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
@@ -72,43 +72,87 @@ final class ProbeRunner: ObservableObject {
                     self.tensorCosine = report.tensorCosine
                     self.tensorMaxDiff = report.tensorMaxDiff
                     self.featureCosine = report.featureCosine
-                    self.loadMs = report.loadMs
                     self.runMs = report.runMs.min() ?? .nan
                     self.log = report.log
                     self.phase = .done
                     self.lastCrashStep = ""
+                    self.lastNote = ProbeTrace.lastNote
                     ProbeTrace.clear()
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.phase = .failed
                     self.lastCrashStep = ProbeTrace.last
+                    self.lastNote = ProbeTrace.lastNote
                     self.log = "❌ 失败于「\(ProbeTrace.last)」：\(error.localizedDescription)"
                 }
             }
         }
     }
 
-    private static func ensureSession() throws -> Double {
-        lock.lock()
-        defer { lock.unlock() }
-        if cachedSession != nil { return 0 }
-        ProbeTrace.mark(.loadSession)
-        guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
-            throw ProbeError.missingFile("模型没打包进 App")
-        }
-        let started = Date()
+    /// 最保守的一次推理：新建 env + session，跑一次，取 CLS 前 384 维。
+    private static func inferOnce(modelPath: String, values: [Float]) throws -> [Double] {
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(1)
-        let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
-        guard let first = try session.inputNames().first else {
-            throw ProbeError.badOutput("模型没有输入")
+        let session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: options)
+
+        let inputNames = try session.inputNames()
+        guard let inputName = inputNames.first else { throw ProbeError.badOutput("模型没有输入") }
+        let outputNames = Set(try session.outputNames())
+
+        let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+        let shape: [NSNumber] = [
+            NSNumber(value: 1),
+            NSNumber(value: 3),
+            NSNumber(value: size),
+            NSNumber(value: size),
+        ]
+        let tensor = try ORTValue(
+            tensorData: NSMutableData(data: data),
+            elementType: .float,
+            shape: shape
+        )
+
+        ProbeTrace.mark(.runSession)
+        let outputs = try session.run(
+            withInputs: [inputName: tensor],
+            outputNames: outputNames,
+            runOptions: nil
+        )
+        ProbeTrace.mark(.readOutput)
+        guard let firstOutput = outputs.values.first else { throw ProbeError.badOutput("模型没有输出") }
+        let outputData = try firstOutput.tensorData() as Data
+        let floatCount = outputData.count / 4
+        guard floatCount >= width else { throw ProbeError.badOutput("输出太小：\(floatCount)") }
+
+        var cls = [Double](repeating: 0, count: width)
+        outputData.withUnsafeBytes { raw in
+            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
+            for i in 0..<width { cls[i] = Double(base[i]) }
         }
-        cachedSession = session
-        cachedInputName = first
-        cachedOutputNames = Set(try session.outputNames())
-        return Date().timeIntervalSince(started) * 1000
+        return cls
+    }
+
+    private static func normalize(_ values: [Double]) -> [Double] {
+        var result = values
+        var norm = 0.0
+        for v in result { norm += v * v }
+        norm = sqrt(norm)
+        if norm > 1e-9 { for i in 0..<result.count { result[i] /= norm } }
+        return result
+    }
+
+    private static func cosine(_ a: [Double], _ b: [Double]) -> (cosine: Double, maxDiff: Double) {
+        var dot = 0.0, na = 0.0, nb = 0.0, mx = 0.0
+        let limit = min(a.count, b.count)
+        for i in 0..<limit {
+            dot += a[i] * b[i]
+            na += a[i] * a[i]
+            nb += b[i] * b[i]
+            mx = max(mx, abs(a[i] - b[i]))
+        }
+        return (dot / (sqrt(na) * sqrt(nb)), mx)
     }
 
     private static func runSync() throws -> ProbeReport {
@@ -121,6 +165,9 @@ final class ProbeRunner: ObservableObject {
         guard let expectedURL = Bundle.main.url(forResource: "probe_expected", withExtension: "txt") else {
             throw ProbeError.missingFile("缺 probe_expected.txt")
         }
+        guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
+            throw ProbeError.missingFile("模型没打包进 App")
+        }
 
         // ---------- A. 图像链路 ----------
         let prepared = try PilImaging.prepareTensor(from: imageURL, size: size, fraction: 1.0)
@@ -130,42 +177,32 @@ final class ProbeRunner: ObservableObject {
         guard refData.count == ours.count * 4 else {
             throw ProbeError.badInput("probe_input.bin 大小 \(refData.count)，应为 \(ours.count * 4)")
         }
+        var reference = [Float](repeating: 0, count: ours.count)
+        refData.withUnsafeBytes { raw in
+            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
+            for i in 0..<ours.count { reference[i] = base[i] }
+        }
 
         var tensorCosine = 0.0
         var tensorMaxDiff = 0.0
         var tensorMeanDiff = 0.0
-        refData.withUnsafeBytes { raw in
-            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
-            var dot = 0.0, normA = 0.0, normB = 0.0, maxDiff = 0.0, absSum = 0.0
-            for i in 0..<ours.count {
-                let a = Double(ours[i])
-                let b = Double(base[i])
-                dot += a * b
-                normA += a * a
-                normB += b * b
-                let d = abs(a - b)
-                maxDiff = max(maxDiff, d)
-                absSum += d
-            }
-            tensorCosine = dot / (sqrt(normA) * sqrt(normB))
-            tensorMaxDiff = maxDiff
-            tensorMeanDiff = absSum / Double(ours.count)
+        var absSum = 0.0
+        var dot = 0.0, normA = 0.0, normB = 0.0
+        for i in 0..<ours.count {
+            let a = Double(ours[i])
+            let b = Double(reference[i])
+            dot += a * b
+            normA += a * a
+            normB += b * b
+            let d = abs(a - b)
+            tensorMaxDiff = max(tensorMaxDiff, d)
+            absSum += d
         }
+        tensorCosine = dot / (sqrt(normA) * sqrt(normB))
+        tensorMeanDiff = absSum / Double(ours.count)
 
-        // ---------- B. 模型链路 ----------
-        let loadMs = try ensureSession()
-        guard let session = cachedSession else { throw ProbeError.badOutput("session 未就绪") }
-        let expected = try String(contentsOf: expectedURL, encoding: .utf8)
-            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
-            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-
-        var timings: [Double] = []
-        var featureCosine = 0.0
-        var featureMaxDiff = 0.0
-
-        // 先把张量体检结果记下来（万一后面崩了，重开 App 能看到）
-        var nanCount = 0
-        var infCount = 0
+        // 张量体检（崩溃后可读）
+        var nanCount = 0, infCount = 0
         var minValue = Double.greatestFiniteMagnitude
         var maxValue = -Double.greatestFiniteMagnitude
         for value in ours {
@@ -176,113 +213,40 @@ final class ProbeRunner: ObservableObject {
             maxValue = Swift.max(maxValue, d)
         }
         ProbeTrace.note(
-            "元素 \(ours.count) 个；NaN \(nanCount)；Inf \(infCount)；" +
-            "min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))" +
-            "；预期 150528 个"
+            "元素 \(ours.count)；NaN \(nanCount)；Inf \(infCount)；" +
+            "min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))"
         )
 
-        // ---------- A/B 测试 ----------
-        // 先用「PC 导出的参考张量」跑一次（v1 已证明这份数据能跑通），
-        // 再用「我们自己算的张量」跑。哪一步崩，断点会直接标出来。
-        var referenceTensor = [Float](repeating: 0, count: ours.count)
-        refData.withUnsafeBytes { raw in
-            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
-            for i in 0..<ours.count { referenceTensor[i] = base[i] }
-        }
+        let expected = try String(contentsOf: expectedURL, encoding: .utf8)
+            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
 
-        @inline(__always)
-        func infer(_ values: [Float]) throws -> [Double] {
-            ProbeTrace.mark(.buildTensor)
-            let shape: [NSNumber] = [
-                NSNumber(value: 1),
-                NSNumber(value: 3),
-                NSNumber(value: size),
-                NSNumber(value: size),
-            ]
-            let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
-            let tensor = try ORTValue(
-                tensorData: NSMutableData(data: data),
-                elementType: .float,
-                shape: shape
-            )
-            ProbeTrace.mark(.runSession)
-            let outputs = try session.run(
-                withInputs: [cachedInputName: tensor],
-                outputNames: cachedOutputNames,
-                runOptions: nil
-            )
-            ProbeTrace.mark(.readOutput)
-            guard let firstOutput = outputs.values.first else { throw ProbeError.badOutput("模型没有输出") }
-            let outputData = try firstOutput.tensorData() as Data
-            let floatCount = outputData.count / 4
-            guard floatCount >= width else { throw ProbeError.badOutput("输出太小：\(floatCount) 个 float") }
-            var cls = [Double](repeating: 0, count: width)
-            outputData.withUnsafeBytes { raw in
-                guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
-                for i in 0..<width { cls[i] = Double(base[i]) }
-            }
-            return cls
-        }
-
-        // 第一次：参考张量（验证 ORT 调用本身没问题）
+        // ---------- B1. 参考张量（v1 已验证能跑通的那份数据）----------
         ProbeTrace.mark(.runReference)
-        let refCls = try infer(referenceTensor)
-        var refCosine = 0.0
-        do {
-            var cls = refCls
-            var norm = 0.0
-            for v in cls { norm += v * v }
-            norm = sqrt(norm)
-            if norm > 1e-9 { for i in 0..<width { cls[i] /= norm } }
-            var dot = 0.0, na = 0.0, nb = 0.0
-            let limit = min(width, expected.count)
-            for i in 0..<limit {
-                dot += cls[i] * expected[i]
-                na += cls[i] * cls[i]
-                nb += expected[i] * expected[i]
-            }
-            refCosine = dot / (sqrt(na) * sqrt(nb))
-        }
+        let refCls = normalize(try inferOnce(modelPath: modelURL.path, values: reference))
+        let refResult = cosine(refCls, expected)
 
-        // 第二次：自算张量（验证我们的数据能跑）
+        // ---------- B2. 自算张量 ----------
         ProbeTrace.mark(.runOurs)
-        _ = try infer(ours)
+        let ourCls = normalize(try inferOnce(modelPath: modelURL.path, values: ours))
+        let featureResult = cosine(ourCls, expected)
 
-        for _ in 0..<3 {
+        // ---------- C. 速度（再跑两次，含 session 创建）----------
+        var timings: [Double] = []
+        for _ in 0..<2 {
             let started = Date()
-            ProbeTrace.mark(.runOurs)
-            var cls = try infer(ours)
-            var norm = 0.0
-            for v in cls { norm += v * v }
-            norm = sqrt(norm)
-            if norm > 1e-9 { for i in 0..<width { cls[i] /= norm } }
-
-            var dot = 0.0, na = 0.0, nb = 0.0, mx = 0.0
-            let limit = min(width, expected.count)
-            for i in 0..<limit {
-                dot += cls[i] * expected[i]
-                na += cls[i] * cls[i]
-                nb += expected[i] * expected[i]
-                mx = max(mx, abs(cls[i] - expected[i]))
-            }
-            featureCosine = dot / (sqrt(na) * sqrt(nb))
-            featureMaxDiff = mx
+            _ = try inferOnce(modelPath: modelURL.path, values: ours)
             timings.append(Date().timeIntervalSince(started) * 1000)
         }
-
-        // 参考张量那一路的余弦（能证明 ORT 调用本身没问题）
-        ProbeTrace.note(
-            ProbeTrace.lastNote + "；参考张量余弦 " + String(format: "%.8f", refCosine)
-        )
 
         ProbeTrace.mark(.done)
 
         let tensorVerdict = tensorCosine >= 0.9999
             ? "✅ 图像链路一致"
-            : (tensorCosine >= 0.999 ? "⚠️ 接近，可能有 1 级灰度差" : "❌ 不一致")
-        let featureVerdict = featureCosine >= 0.999
+            : (tensorCosine >= 0.999 ? "⚠️ 接近（约 1 级灰度差）" : "❌ 不一致")
+        let featureVerdict = featureResult.cosine >= 0.999
             ? "✅ 特征一致"
-            : (featureCosine >= 0.99 ? "⚠️ 特征接近" : "❌ 特征不一致")
+            : (featureResult.cosine >= 0.99 ? "⚠️ 特征接近" : "❌ 特征不一致")
 
         let runs = timings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
         let log = """
@@ -293,22 +257,22 @@ final class ProbeRunner: ObservableObject {
           平均单项差：\(String(format: "%.6f", tensorMeanDiff))
           \(tensorVerdict)
 
-        【B. 特征链路】
-          特征余弦：\(String(format: "%.8f", featureCosine))
-          最大单项差：\(String(format: "%.8f", featureMaxDiff))
+        【B. 模型链路】
+          参考张量→特征余弦：\(String(format: "%.8f", refResult.cosine))
+          自算张量→特征余弦：\(String(format: "%.8f", featureResult.cosine))
+          最大单项差：\(String(format: "%.8f", featureResult.maxDiff))
           \(featureVerdict)
 
-        【C. 速度】
-          加载模型：\(loadMs > 0 ? String(format: "%.0f", loadMs) : "复用") ms
-          三次推理：\(runs) ms
+        【C. 速度】（含每次新建 session）
+          \(runs) ms
         """
         return ProbeReport(
             tensorCosine: tensorCosine,
             tensorMaxDiff: tensorMaxDiff,
             tensorMeanDiff: tensorMeanDiff,
-            featureCosine: featureCosine,
-            featureMaxDiff: featureMaxDiff,
-            loadMs: loadMs,
+            refCosine: refResult.cosine,
+            featureCosine: featureResult.cosine,
+            featureMaxDiff: featureResult.maxDiff,
             runMs: timings,
             log: log
         )

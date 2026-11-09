@@ -71,8 +71,7 @@ struct ContentView: View {
                     }
                     HStack(spacing: 10) {
                         metric("特征余弦", String(format: "%.6f", runner.featureCosine))
-                        metric("纯推理", String(format: "%.0f ms", runner.runMs))
-                        metric("加载", runner.loadMs > 0 ? String(format: "%.0f ms", runner.loadMs) : "复用")
+                        metric("单次耗时", String(format: "%.0f ms", runner.runMs))
                     }
                 }
 
