@@ -40,6 +40,12 @@ struct ContentView: View {
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("搜索", systemImage: "magnifyingglass") }
+
+            NavigationView {
+                SettingsView()
+            }
+            .navigationViewStyle(.stack)
+            .tabItem { Label("设置", systemImage: "gearshape") }
         }
     }
 

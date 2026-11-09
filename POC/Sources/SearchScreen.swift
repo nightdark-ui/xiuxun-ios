@@ -50,7 +50,7 @@ final class SearchModel: ObservableObject {
     @Published var queryThumb: UIImage?
     @Published var elapsedText: String = ""
 
-    var options = SearchOptions()
+    var options: SearchOptions { AppSettings.shared.makeOptions() }
 
     private var encoder: QueryEncoder?
     private var search: GallerySearch?

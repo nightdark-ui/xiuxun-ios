@@ -235,8 +235,34 @@ final class GalleryUpdater {
             progress(state)
         }
 
-        // 4) 用服务端 index.json 覆盖（偏移与款列表以它为准）
-        try indexData.write(to: galleryURL.appendingPathComponent("index.json"), options: .atomic)
+        // 4) 备份旧 index.json，再用服务端版本覆盖
+        let indexURL = galleryURL.appendingPathComponent("index.json")
+        let backupURL = galleryURL.appendingPathComponent("index.json.prev")
+        try? fileManager.removeItem(at: backupURL)
+        if let oldIndex = try? Data(contentsOf: indexURL) {
+            try? oldIndex.write(to: backupURL, options: .atomic)
+        }
+        try indexData.write(to: indexURL, options: .atomic)
+
+        // 5) 校验：款数、recall 大小、heavy 末尾是否吻合
+        let verifyPackage = try GalleryPackage(root: galleryURL)
+        let recallSize = fileSize(recallURL)
+        let expectedRecall = Int64(verifyPackage.count * GalleryPackage.recallBytes)
+        let heavyEnd = fileSize(heavyURL)
+        var heavyOK = true
+        if let lastDesign = verifyPackage.designs.last {
+            heavyOK = heavyEnd >= lastDesign.heavyOffset
+        }
+        if recallSize != expectedRecall || !heavyOK {
+            // 回滚 index.json，避免出现"索引与二进制不一致"的坏状态
+            if let backup = try? Data(contentsOf: backupURL) {
+                try? backup.write(to: indexURL, options: .atomic)
+            }
+            throw UpdateError.needFullReload(
+                "校验失败（recall \(recallSize)/\(expectedRecall)，heavy \(heavyEnd)），已回滚索引"
+            )
+        }
+        try? fileManager.removeItem(at: backupURL)
 
         state.phase = "完成"
         state.filesDone = state.filesTotal
