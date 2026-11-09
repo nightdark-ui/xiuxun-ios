@@ -194,8 +194,9 @@ final class ProbeRunner: ObservableObject {
             coremlOptions.enableOnSubgraphs = false
             coremlOptions.onlyEnableForDevicesWithANE = false
             do {
-                let enabled = try options.appendCoreMLExecutionProvider(with: coremlOptions)
-                note = enabled ? "CoreML EP 已启用" : "CoreML EP 未启用（回落 CPU）"
+                // 注意：这个方法的返回值在 Swift 里被推断为 Void，不能当 Bool 用
+                try options.appendCoreMLExecutionProvider(with: coremlOptions)
+                note = "已请求 CoreML EP"
             } catch {
                 note = "CoreML EP 启用失败：\(error.localizedDescription)"
             }

@@ -11,7 +11,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v6 · CPU 与 CoreML 对比")
+                    Text("构建 v7 · CPU 与 CoreML 对比")
                         .font(.caption2)
                         .foregroundColor(.blue)
                 }
