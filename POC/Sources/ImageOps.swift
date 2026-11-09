@@ -8,10 +8,10 @@ import ImageIO
 ///   EXIF → RGB → 灰度(L) → CLAHE(2.0, 8×8) → 复制成 RGB → 中心裁切 → BICUBIC 224 → 归一化
 enum ImageOps {
     /// 解码成灰度（已做 CLAHE），返回宽高 + 像素
-    static func loadEnhancedGray(from url: URL) throws -> (width: Int, height: Int, pixels: [UInt8]) {
+    static func loadEnhancedGray(from url: URL) throws -> PilImaging.GrayImage {
         let raw = try PilImaging.loadGray(from: url)
         let enhanced = Clahe.apply(raw.pixels, width: raw.width, height: raw.height)
-        return (raw.width, raw.height, enhanced)
+        return PilImaging.GrayImage(width: raw.width, height: raw.height, pixels: enhanced)
     }
 
     /// 从已增强的灰度图里取一个旋转副本（角度为 0/45/…/315）
@@ -129,7 +129,6 @@ enum ImageOps {
                 var pixels = [UInt8](repeating: 0, count: width * height)
                 for y in 0..<height {
                     let src = (y0 + y) * w + x0
-                    pixels[y * width + x] = 0
                     for x in 0..<width {
                         pixels[y * width + x] = image.pixels[src + x]
                     }
