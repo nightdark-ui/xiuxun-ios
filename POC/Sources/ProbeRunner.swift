@@ -2,13 +2,11 @@ import Foundation
 import Combine
 import onnxruntime_objc
 
-/// 数值一致性探针。
+/// 数值一致性探针（v2）。
 ///
-/// 用 PC 端导出的 `probe_input.bin`（1×3×224×224 float32）跑一遍模型，
-/// 取 CLS token（前 384 个）做 L2 归一化，再与 `probe_expected.txt` 比较。
-///
-/// 注意：这里刻意只用最保守的 API（env / session / ORTValue / tensorData），
-/// 不设置图优化级别、不读取 tensorShape，避免不同 ORT 版本的接口差异。
+/// 相比 v1 的两点改进：
+/// 1. **模型只加载一次**，之后连续跑 3 次，分别计时 —— 这样才能看出"纯推理"耗时
+/// 2. 结果里同时给出加载耗时和每次推理耗时，用来估算整次搜索的时间
 enum ProbePhase: String {
     case idle = "未运行"
     case running = "推理中…"
@@ -19,8 +17,9 @@ enum ProbePhase: String {
 struct ProbeResult {
     let cosine: Double
     let maxDiff: Double
-    let elapsedMs: Double
-    let log: String
+    let loadMs: Double
+    let runMs: [Double]
+    let message: String
 }
 
 enum ProbeError: LocalizedError {
@@ -30,26 +29,34 @@ enum ProbeError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .missingFile(let message): return message
-        case .badInput(let message): return message
-        case .badOutput(let message): return message
+        case .missingFile(let m): return m
+        case .badInput(let m): return m
+        case .badOutput(let m): return m
         }
     }
 }
 
 final class ProbeRunner: ObservableObject {
-    @Published var log: String = ""
+    @Published var message: String = ""
     @Published var cosine: Double = .nan
     @Published var maxAbsDiff: Double = .nan
-    @Published var elapsedMs: Double = .nan
+    @Published var loadMs: Double = .nan
+    @Published var runMs: [Double] = []
     @Published var phase: ProbePhase = .idle
 
     private static let inputShape = [1, 3, 224, 224]
     private static let width = 384
 
+    // 只加载一次，后续复用
+    private static var cachedEnv: ORTEnv?
+    private static var cachedSession: ORTSession?
+    private static var cachedInputName: String = ""
+    private static var cachedOutputNames: Set<String> = []
+    private static let lock = NSLock()
+
     func run() {
         phase = .running
-        log = ""
+        message = ""
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
@@ -57,23 +64,43 @@ final class ProbeRunner: ObservableObject {
                 DispatchQueue.main.async {
                     self.cosine = result.cosine
                     self.maxAbsDiff = result.maxDiff
-                    self.elapsedMs = result.elapsedMs
-                    self.log = result.log
+                    self.loadMs = result.loadMs
+                    self.runMs = result.runMs
+                    self.message = result.message
                     self.phase = .done
                 }
             } catch {
                 DispatchQueue.main.async {
                     self.phase = .failed
-                    self.log = "❌ \(error.localizedDescription)"
+                    self.message = "❌ \(error.localizedDescription)"
                 }
             }
         }
     }
 
-    private static func runSync() throws -> ProbeResult {
+    private static func ensureSession() throws -> Double {
+        lock.lock()
+        defer { lock.unlock() }
+        if cachedSession != nil { return 0 }
+
         guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
             throw ProbeError.missingFile("模型没打包进 App：检查 Resources 是否加入 target")
         }
+        let started = Date()
+        let env = try ORTEnv(loggingLevel: .warning)
+        let options = try ORTSessionOptions()
+        try options.setIntraOpNumThreads(1)
+        let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
+        let names = try session.inputNames()
+        guard let first = names.first else { throw ProbeError.badOutput("模型没有输入") }
+        cachedEnv = env
+        cachedSession = session
+        cachedInputName = first
+        cachedOutputNames = Set(try session.outputNames())
+        return Date().timeIntervalSince(started) * 1000
+    }
+
+    private static func runSync() throws -> ProbeResult {
         guard let inputURL = Bundle.main.url(forResource: "probe_input", withExtension: "bin") else {
             throw ProbeError.missingFile("缺 probe_input.bin")
         }
@@ -90,53 +117,44 @@ final class ProbeRunner: ObservableObject {
         guard inputData.count == elementCount * 4 else {
             throw ProbeError.badInput("probe_input.bin 大小不符：\(inputData.count) 字节，应为 \(elementCount * 4)")
         }
+        let loadMs = try ensureSession()
+        guard let session = cachedSession else { throw ProbeError.badOutput("session 未就绪") }
 
-        let started = Date()
+        var timings: [Double] = []
+        var lastCls = [Double](repeating: 0, count: width)
+        var tokens = 0
 
-        let env = try ORTEnv(loggingLevel: .warning)
-        let options = try ORTSessionOptions()
-        try options.setIntraOpNumThreads(1)
-        let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
-
-        let inputNames = try session.inputNames()
-        guard let inputName = inputNames.first else {
-            throw ProbeError.badOutput("模型没有输入")
-        }
-        let tensor = try ORTValue(
-            tensorData: NSMutableData(data: inputData),
-            elementType: .float,
-            shape: inputShape.map { NSNumber(value: $0) }
-        )
-        let outputNames = try session.outputNames()
-        let outputs = try session.run(
-            withInputs: [inputName: tensor],
-            outputNames: Set(outputNames),
-            runOptions: nil
-        )
-        guard let firstOutput = outputs.values.first else {
-            throw ProbeError.badOutput("模型没有输出")
-        }
-
-        let outputData = try firstOutput.tensorData() as Data
-        let floatCount = outputData.count / 4
-        guard floatCount > 0, floatCount % width == 0 else {
-            throw ProbeError.badOutput("输出字节数 \(outputData.count) 不是 \(width) 的整数倍")
-        }
-        let tokens = floatCount / width
-
-        // 第 0 个 token 是 CLS
-        var cls = [Double](repeating: 0, count: width)
-        outputData.withUnsafeBytes { raw in
-            let floats = raw.bindMemory(to: Float.self)
-            for i in 0..<width {
-                cls[i] = Double(floats[i])
+        for _ in 0..<3 {
+            let started = Date()
+            let tensor = try ORTValue(
+                tensorData: NSMutableData(data: inputData),
+                elementType: .float,
+                shape: inputShape.map { NSNumber(value: $0) }
+            )
+            let outputs = try session.run(
+                withInputs: [cachedInputName: tensor],
+                outputNames: cachedOutputNames,
+                runOptions: nil
+            )
+            guard let firstOutput = outputs.values.first else { throw ProbeError.badOutput("模型没有输出") }
+            let outputData = try firstOutput.tensorData() as Data
+            let floatCount = outputData.count / 4
+            guard floatCount > 0, floatCount % width == 0 else {
+                throw ProbeError.badOutput("输出字节数 \(outputData.count) 不是 \(width) 的整数倍")
             }
-        }
-        var norm = 0.0
-        for value in cls { norm += value * value }
-        norm = sqrt(norm)
-        if norm > 1e-9 {
-            for i in 0..<width { cls[i] /= norm }
+            tokens = floatCount / width
+
+            var cls = [Double](repeating: 0, count: width)
+            outputData.withUnsafeBytes { raw in
+                let floats = raw.bindMemory(to: Float.self)
+                for i in 0..<width { cls[i] = Double(floats[i]) }
+            }
+            var norm = 0.0
+            for v in cls { norm += v * v }
+            norm = sqrt(norm)
+            if norm > 1e-9 { for i in 0..<width { cls[i] /= norm } }
+            lastCls = cls
+            timings.append(Date().timeIntervalSince(started) * 1000)
         }
 
         guard expected.count == width else {
@@ -145,33 +163,35 @@ final class ProbeRunner: ObservableObject {
 
         var dot = 0.0, normA = 0.0, normB = 0.0, maxDiff = 0.0
         for i in 0..<width {
-            dot += cls[i] * expected[i]
-            normA += cls[i] * cls[i]
+            dot += lastCls[i] * expected[i]
+            normA += lastCls[i] * lastCls[i]
             normB += expected[i] * expected[i]
-            maxDiff = max(maxDiff, abs(cls[i] - expected[i]))
+            maxDiff = max(maxDiff, abs(lastCls[i] - expected[i]))
         }
         let cosine = dot / (sqrt(normA) * sqrt(normB))
-        let elapsedMs = Date().timeIntervalSince(started) * 1000
 
         let verdict: String
         if cosine >= 0.999 {
-            verdict = "✅ 通过：ORT 在 iOS 上数值可信，可以继续移植"
+            verdict = "✅ 通过：数值与 PC/安卓一致"
         } else if cosine >= 0.99 {
-            verdict = "⚠️ 接近：可能是预处理/精度差异，看 maxDiff"
+            verdict = "⚠️ 接近：可能有精度差异"
         } else {
-            verdict = "❌ 不通过：先排查模型与输入是否一致"
+            verdict = "❌ 不通过"
         }
 
-        let log = """
-        模型：\(modelURL.lastPathComponent)
-        输入：\(inputShape.map(String.init).joined(separator: "x"))，\(inputData.count) 字节
-        输出：\(tokens) token × \(width)（\(floatCount) 个 float）
+        let runs = timings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
+        let message = """
+        模型：dinov2-small-fp16.onnx
+        输入：1x3x224x224，\(inputData.count) 字节
+        输出：\(tokens) token × \(width)
+
+        加载模型：\(loadMs > 0 ? String(format: "%.0f", loadMs) : "复用上次") ms
+        推理三次：\(runs) ms
         余弦：\(String(format: "%.8f", cosine))
         最大单项差：\(String(format: "%.8f", maxDiff))
-        耗时：\(String(format: "%.0f", elapsedMs)) ms
 
         \(verdict)
         """
-        return ProbeResult(cosine: cosine, maxDiff: maxDiff, elapsedMs: elapsedMs, log: log)
+        return ProbeResult(cosine: cosine, maxDiff: maxDiff, loadMs: loadMs, runMs: timings, message: message)
     }
 }
