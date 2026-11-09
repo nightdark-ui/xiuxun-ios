@@ -6,9 +6,37 @@ import onnxruntime_objc
 enum ComputeMode: String, CaseIterable {
     case cpu1 = "CPU 1线程"
     case cpu4 = "CPU 4线程"
-    case xnnpack4 = "XNNPACK 4线程"
+    case xnnpackAll = "XNNPACK 全核"
     case coreML = "CoreML"
     case coreMLANE = "CoreML(仅ANE)"
+}
+
+enum DeviceInfo {
+    /// 物理核心数（含能效核）
+    static var coreCount: Int { ProcessInfo.processInfo.activeProcessorCount }
+
+    /// 建议给 XNNPACK 用的线程数：留一个核给 UI 和系统
+    static var recommendedThreads: Int { max(1, coreCount - 1) }
+
+    static var memoryGB: Double {
+        Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0 / 1024.0
+    }
+
+    /// 机型标识（如 iPhone17,1）
+    static var machine: String {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.machine", &model, &size, nil, 0)
+        return String(cString: model)
+    }
+
+    static var summary: String {
+        String(
+            format: "机型 %@ · %d 核 · 内存 %.1f GB · 建议线程 %d",
+            machine, coreCount, memoryGB, recommendedThreads
+        )
+    }
 }
 
 struct RunSummary {
@@ -177,13 +205,14 @@ final class ProbeRunner: ObservableObject {
         case .cpu4:
             try options.setIntraOpNumThreads(4)
             note = "4 线程"
-        case .xnnpack4:
+        case .xnnpackAll:
             try options.setIntraOpNumThreads(1)
+            let threads = DeviceInfo.recommendedThreads
             let xnn = ORTXnnpackExecutionProviderOptions()
-            xnn.intra_op_num_threads = 4
+            xnn.intra_op_num_threads = Int32(threads)
             do {
                 try options.appendXnnpackExecutionProvider(with: xnn)
-                note = "XNNPACK 4 线程"
+                note = "XNNPACK \(threads) 线程（全核）"
             } catch {
                 note = "XNNPACK 启用失败：\(error.localizedDescription)"
             }

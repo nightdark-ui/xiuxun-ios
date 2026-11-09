@@ -16,9 +16,12 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v8 · 四种后端对比")
+                    Text("构建 v9 · 后端对比")
                         .font(.caption2)
                         .foregroundColor(.blue)
+                    Text(DeviceInfo.summary)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
 
                 if !runner.lastCrashStep.isEmpty {
