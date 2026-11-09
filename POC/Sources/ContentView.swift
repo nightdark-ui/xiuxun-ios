@@ -5,22 +5,42 @@ struct ContentView: View {
     @State private var showProbe = false
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    galleryCard
-                    searchCard
-                    probeEntry
+        TabView {
+            NavigationView {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        galleryCard
+                        probeEntry
+                    }
+                    .padding(20)
                 }
-                .padding(20)
+                .navigationBarHidden(true)
+                .sheet(isPresented: $showProbe) {
+                    ProbePanelView()
+                }
             }
-            .navigationBarHidden(true)
-            .sheet(isPresented: $showProbe) {
-                ProbePanelView()
+            .navigationViewStyle(.stack)
+            .tabItem { Label("图库", systemImage: "square.grid.2x2") }
+
+            NavigationView {
+                VStack(spacing: 8) {
+                    if app.hasGallery {
+                        SearchView(app: app)
+                    } else {
+                        Spacer()
+                        Text("请先在「图库」里导入图库")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                }
+                .navigationTitle("搜索")
+                .navigationBarTitleDisplayMode(.inline)
             }
+            .navigationViewStyle(.stack)
+            .tabItem { Label("搜索", systemImage: "magnifyingglass") }
         }
-        .navigationViewStyle(.stack)
     }
 
     private var header: some View {
@@ -146,19 +166,6 @@ struct ContentView: View {
             }
         }
         .padding(14)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(14)
-    }
-
-    private var searchCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("搜索").font(.headline)
-            Text(app.hasGallery ? "搜索功能正在开发（下一步接入 DINOv2 召回）" : "先导入图库")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemBackground))
         .cornerRadius(14)
     }
