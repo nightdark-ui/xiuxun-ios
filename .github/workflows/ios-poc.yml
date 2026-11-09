@@ -19,38 +19,40 @@ jobs:
 
       - name: Show environment
         run: |
-          echo "::group::System"
-          sw_vers
-          uname -m
-          echo "::endgroup::"
-          echo "::group::Xcode"
-          (xcodebuild -version || true)
-          echo "::endgroup::"
-          echo "::group::Tools"
+          set -x
+          sw_vers || true
+          uname -m || true
+          xcodebuild -version || true
           echo "xcodegen: $(command -v xcodegen || echo none)"
-          echo "pod:      $(command -v pod || echo none)"
-          echo "ruby:     $(command -v ruby || echo none)"
-          echo "::endgroup::"
+          echo "pod: $(command -v pod || echo none)"
 
-      - name: Get XcodeGen
+      - name: Install XcodeGen
         run: |
           set -euo pipefail
           if command -v xcodegen >/dev/null 2>&1; then
-            echo "xcodegen already present"
-          else
-            echo "downloading xcodegen release binary"
-            curl -fL --retry 3 -o /tmp/xcodegen.zip \
+            echo "xcodegen already installed"
+            xcodegen --version
+            exit 0
+          fi
+
+          echo "trying homebrew"
+          brew install xcodegen || true
+
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            echo "homebrew did not provide xcodegen, falling back to release binary"
+            curl -fL --retry 5 --retry-delay 3 --retry-all-errors \
+              -o /tmp/xcodegen.zip \
               https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
             unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
-            ls -la /tmp/xcodegen
-            # release 包解出来通常是 xcodegen/bin/xcodegen 或 .build/release/xcodegen
             BIN=$(find /tmp/xcodegen -type f -name xcodegen -perm -u+x | head -n 1)
-            echo "found: $BIN"
+            echo "found binary: $BIN"
             mkdir -p "$HOME/bin"
             cp "$BIN" "$HOME/bin/xcodegen"
             chmod +x "$HOME/bin/xcodegen"
             echo "$HOME/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/bin:$PATH"
           fi
+
           xcodegen --version
 
       - name: Generate project
@@ -59,14 +61,14 @@ jobs:
           set -euo pipefail
           xcodegen generate
           ls -la
-          test -f XiuxunPOC.xcodeproj/project.pbxproj && echo "project generated OK"
+          test -f XiuxunPOC.xcodeproj/project.pbxproj
 
       - name: Install pods
         working-directory: POC
         run: |
           set -euo pipefail
           if ! command -v pod >/dev/null 2>&1; then
-            echo "installing cocoapods via gem"
+            echo "installing cocoapods"
             sudo gem install cocoapods --no-document
           fi
           pod --version
