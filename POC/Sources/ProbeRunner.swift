@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import onnxruntime_objc
 
 /// 数值一致性探针。
@@ -7,17 +8,34 @@ import onnxruntime_objc
 /// 1. 用 PC 端导出的 `probe_input.bin`（1×3×224×224 float32）跑一遍模型
 /// 2. 取 CLS token（前 384 个）并做 L2 归一化
 /// 3. 与 PC 端导出的 `probe_expected.txt` 逐项比较，输出余弦
-///
-/// 判定：余弦 ≥ 0.999 → ORT 在 iOS 上数值可信，可以继续移植。
 enum ProbePhase: String {
     case idle = "未运行"
-    case loading = "加载模型…"
     case running = "推理中…"
     case done = "完成"
     case failed = "失败"
 }
 
-@MainActor
+struct ProbeResult {
+    let cosine: Double
+    let maxDiff: Double
+    let elapsedMs: Double
+    let log: String
+}
+
+enum ProbeError: LocalizedError {
+    case missingFile(String)
+    case badInput(String)
+    case badOutput(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingFile(let message): return message
+        case .badInput(let message): return message
+        case .badOutput(let message): return message
+        }
+    }
+}
+
 final class ProbeRunner: ObservableObject {
     @Published var log: String = ""
     @Published var cosine: Double = .nan
@@ -25,25 +43,25 @@ final class ProbeRunner: ObservableObject {
     @Published var elapsedMs: Double = .nan
     @Published var phase: ProbePhase = .idle
 
-    private let inputShape: [Int] = [1, 3, 224, 224]
-    private let width = 384
+    private static let inputShape = [1, 3, 224, 224]
+    private static let width = 384
 
     func run() {
-        phase = .loading
+        phase = .running
         log = ""
-        Task.detached { [weak self] in
-            guard let self else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
             do {
-                let result = try self.runSync()
-                await MainActor.run {
+                let result = try ProbeRunner.runSync()
+                DispatchQueue.main.async {
                     self.cosine = result.cosine
                     self.maxAbsDiff = result.maxDiff
                     self.elapsedMs = result.elapsedMs
-                    self.phase = .done
                     self.log = result.log
+                    self.phase = .done
                 }
             } catch {
-                await MainActor.run {
+                DispatchQueue.main.async {
                     self.phase = .failed
                     self.log = "❌ \(error.localizedDescription)"
                 }
@@ -51,16 +69,9 @@ final class ProbeRunner: ObservableObject {
         }
     }
 
-    private struct ProbeResult {
-        let cosine: Double
-        let maxDiff: Double
-        let elapsedMs: Double
-        let log: String
-    }
-
-    private func runSync() throws -> ProbeResult {
+    private static func runSync() throws -> ProbeResult {
         guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
-            throw ProbeError.missingFile("dinov2-small-fp16.onnx 没打进 App（检查 Resources 是否加入 target）")
+            throw ProbeError.missingFile("模型没打包进 App：检查 Resources 是否加入 target")
         }
         guard let inputURL = Bundle.main.url(forResource: "probe_input", withExtension: "bin") else {
             throw ProbeError.missingFile("缺 probe_input.bin")
@@ -80,10 +91,11 @@ final class ProbeRunner: ObservableObject {
         }
 
         let started = Date()
+
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(1)
-        try options.setGraphOptimizationLevel(.noOptimization)
+        try options.setGraphOptimizationLevel(.disabled)
         let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
 
         let inputNames = try session.inputNames()
@@ -104,11 +116,13 @@ final class ProbeRunner: ObservableObject {
         guard let firstOutput = outputs.values.first else {
             throw ProbeError.badOutput("模型没有输出")
         }
+
         let outputData = try firstOutput.tensorData() as Data
-        let outputShape = try firstOutput.tensorShape().map { $0.intValue }
-        guard let total = outputShape.reduce(Optional(1), { acc, value in acc.map { $0 * value } }),
-              total * 4 == outputData.count else {
-            throw ProbeError.badOutput("输出形状异常：\(outputShape)")
+        let shapeNumbers = try firstOutput.tensorShape()
+        let outputShape = shapeNumbers.map { $0.intValue }
+        let total = outputShape.reduce(1, *)
+        guard total * 4 == outputData.count else {
+            throw ProbeError.badOutput("输出形状异常：\(outputShape)，字节数 \(outputData.count)")
         }
 
         // 输出是 (1, tokens, 384)，第 0 个 token 是 CLS
@@ -142,16 +156,18 @@ final class ProbeRunner: ObservableObject {
         let elapsedMs = Date().timeIntervalSince(started) * 1000
 
         let verdict: String
-        switch cosine {
-        case 0.999...: verdict = "✅ 通过：ORT 在 iOS 上数值可信，可以继续移植"
-        case 0.99..<0.999: verdict = "⚠️ 接近：可能是预处理/精度差异，需要看 maxDiff"
-        default: verdict = "❌ 不通过：先排查模型与输入是否一致"
+        if cosine >= 0.999 {
+            verdict = "✅ 通过：ORT 在 iOS 上数值可信，可以继续移植"
+        } else if cosine >= 0.99 {
+            verdict = "⚠️ 接近：可能是预处理/精度差异，看 maxDiff"
+        } else {
+            verdict = "❌ 不通过：先排查模型与输入是否一致"
         }
 
         let log = """
         模型：\(modelURL.lastPathComponent)
         输入：\(inputShape.map(String.init).joined(separator: "x"))，\(inputData.count) 字节
-        输出：\(tokens) token × 384，取第 0 个 CLS 并归一化
+        输出：\(tokens) token × \(width)，取第 0 个 CLS 并归一化
         余弦：\(String(format: "%.8f", cosine))
         最大单项差：\(String(format: "%.8f", maxDiff))
         耗时：\(String(format: "%.0f", elapsedMs)) ms
@@ -159,19 +175,5 @@ final class ProbeRunner: ObservableObject {
         \(verdict)
         """
         return ProbeResult(cosine: cosine, maxDiff: maxDiff, elapsedMs: elapsedMs, log: log)
-    }
-}
-
-enum ProbeError: LocalizedError {
-    case missingFile(String)
-    case badInput(String)
-    case badOutput(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .missingFile(let message): return message
-        case .badInput(let message): return message
-        case .badOutput(let message): return message
-        }
     }
 }

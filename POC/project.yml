@@ -16,7 +16,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: 绣寻探针
+        CFBundleDisplayName: Xiuxun Probe
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -26,7 +26,8 @@ targets:
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_BITCODE: "NO"
-        # 让 Sideloadly 能签：不要在这里固定签名身份
         CODE_SIGN_STYLE: Automatic
-    dependencies:
-      - pod: onnxruntime-objc
+
+# Do NOT declare CocoaPods dependencies here: XcodeGen only knows
+# target / framework / sdk / package / carthage. The onnxruntime-objc pod
+# is declared in Podfile and integrated by "pod install".
