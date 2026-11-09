@@ -5,13 +5,18 @@ struct ContentView: View {
 
     private var isBusy: Bool { runner.phase == .running }
 
+    private let columns = [
+        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 10),
+    ]
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v7 · CPU 与 CoreML 对比")
+                    Text("构建 v8 · 四种后端对比")
                         .font(.caption2)
                         .foregroundColor(.blue)
                 }
@@ -30,56 +35,50 @@ struct ContentView: View {
                     .cornerRadius(10)
                 }
 
-                HStack(spacing: 10) {
-                    Button {
-                        runner.run(mode: .cpu)
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("CPU 测试").bold()
-                            Spacer()
+                LazyVGrid(columns: columns, spacing: 10) {
+                    ForEach(ComputeMode.allCases, id: \.self) { mode in
+                        Button {
+                            runner.run(mode: mode)
+                        } label: {
+                            Text(mode.rawValue)
+                                .font(.subheadline).bold()
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(color(for: mode))
+                                .foregroundColor(.white)
+                                .cornerRadius(20)
                         }
-                        .padding(.vertical, 12)
-                        .background(Color(red: 0.95, green: 0.40, blue: 0.13))
-                        .foregroundColor(.white)
-                        .cornerRadius(22)
+                        .disabled(isBusy)
                     }
-                    .disabled(isBusy)
-
-                    Button {
-                        runner.run(mode: .coreML)
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("CoreML 测试").bold()
-                            Spacer()
-                        }
-                        .padding(.vertical, 12)
-                        .background(Color(red: 0.13, green: 0.55, blue: 0.35))
-                        .foregroundColor(.white)
-                        .cornerRadius(22)
-                    }
-                    .disabled(isBusy)
                 }
 
                 Text(runner.phaseText.isEmpty ? runner.phase.rawValue : runner.phaseText)
                     .font(.footnote)
                     .foregroundColor(.secondary)
 
-                if let cpu = runner.cpuSummary {
-                    summaryCard(cpu, accent: .orange)
+                ForEach(ComputeMode.allCases, id: \.self) { mode in
+                    if let summary = runner.summaries[mode] {
+                        summaryCard(summary)
+                    }
                 }
-                if let coreML = runner.coreMLSummary {
-                    summaryCard(coreML, accent: .green)
+
+                if !runner.lastNote.isEmpty {
+                    Text(runner.lastNote)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(10)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("怎么读").font(.footnote).bold()
-                    Text("先点 CPU 测试，再点 CoreML 测试，两边数字直接对比")
+                    Text("对比要点").font(.footnote).bold()
+                    Text("重点看「推理」那一列，和特征余弦是否仍 ≥ 0.999")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("「推理」是纯推理耗时；「建 session」包含 CoreML 首次编译，通常更慢")
+                    Text("XNNPACK 多线程是安卓端在用的组合，理论上最接近")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("CoreML 的特征余弦若低于 0.999，说明数值漂移，不能直接用于搜索")
+                    Text("建 session 只影响启动，不影响每次搜索")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.top, 6)
@@ -88,13 +87,23 @@ struct ContentView: View {
         }
     }
 
+    private func color(for mode: ComputeMode) -> Color {
+        switch mode {
+        case .cpu1: return Color(red: 0.95, green: 0.40, blue: 0.13)
+        case .cpu4: return Color(red: 0.90, green: 0.55, blue: 0.10)
+        case .xnnpack4: return Color(red: 0.20, green: 0.50, blue: 0.75)
+        case .coreML: return Color(red: 0.13, green: 0.55, blue: 0.35)
+        case .coreMLANE: return Color(red: 0.35, green: 0.35, blue: 0.55)
+        }
+    }
+
     @ViewBuilder
-    private func summaryCard(_ summary: RunSummary, accent: Color) -> some View {
+    private func summaryCard(_ summary: RunSummary) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(summary.mode.rawValue)
                     .font(.subheadline).bold()
-                    .foregroundColor(accent)
+                    .foregroundColor(color(for: summary.mode))
                 Spacer()
                 Text(summary.ok ? "完成" : "失败")
                     .font(.caption)
@@ -103,9 +112,9 @@ struct ContentView: View {
 
             if summary.ok {
                 HStack(spacing: 8) {
-                    metric("特征余弦", String(format: "%.6f", summary.featureCosine))
                     metric("推理", String(format: "%.0f ms", summary.runMs))
                     metric("建 session", String(format: "%.0f ms", summary.sessionMs))
+                    metric("特征余弦", String(format: "%.6f", summary.featureCosine))
                 }
                 Text(summary.detail)
                     .font(.system(size: 11, design: .monospaced))

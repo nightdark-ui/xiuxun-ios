@@ -2,18 +2,19 @@ import Foundation
 import Combine
 import onnxruntime_objc
 
-/// 计算后端
-enum ComputeMode: String {
-    case cpu = "CPU"
-    case coreML = "CoreML/ANE"
+/// 计算后端 / 配置
+enum ComputeMode: String, CaseIterable {
+    case cpu1 = "CPU 1线程"
+    case cpu4 = "CPU 4线程"
+    case xnnpack4 = "XNNPACK 4线程"
+    case coreML = "CoreML"
+    case coreMLANE = "CoreML(仅ANE)"
 }
 
-/// 单次测试的结果
 struct RunSummary {
     var mode: ComputeMode
     var ok: Bool
     var note: String = ""
-    var tensorCosine: Double = .nan
     var featureCosine: Double = .nan
     var sessionMs: Double = .nan
     var runMs: Double = .nan
@@ -25,16 +26,6 @@ enum ProbePhase: String {
     case running = "运行中…"
     case done = "完成"
     case failed = "失败"
-}
-
-struct ProbeReport {
-    var tensorCosine: Double
-    var tensorMaxDiff: Double
-    var tensorMeanDiff: Double
-    var sessionMs: Double
-    var runMs: Double
-    var featureCosine: Double
-    var detail: String
 }
 
 enum ProbeError: LocalizedError {
@@ -53,21 +44,17 @@ enum ProbeError: LocalizedError {
 
 final class ProbeRunner: ObservableObject {
     @Published var phase: ProbePhase = .idle
-    @Published var cpuSummary: RunSummary?
-    @Published var coreMLSummary: RunSummary?
+    @Published var phaseText: String = ""
+    @Published var summaries: [ComputeMode: RunSummary] = [:]
     @Published var lastCrashStep: String = ProbeTrace.last
     @Published var lastNote: String = ProbeTrace.lastNote
-    @Published var phaseText: String = ""
 
     private static let size = 224
     private static let width = 384
 
-    /// 图像链路只算一次，两种后端共用同一份张量
     private var cachedTensor: [Float]?
-    private var cachedReference: [Float]?
     private var cachedExpected: [Double]?
     private var tensorCheck: (cosine: Double, maxDiff: Double, meanDiff: Double) = (.nan, .nan, .nan)
-    private var imageSize = (0, 0)
 
     func run(mode: ComputeMode) {
         if phase == .running { return }
@@ -82,12 +69,11 @@ final class ProbeRunner: ObservableObject {
             do {
                 let summary = try self.runSync(mode: mode)
                 DispatchQueue.main.async {
-                    if mode == .cpu { self.cpuSummary = summary } else { self.coreMLSummary = summary }
-                    self.phase = .done
-                    self.phaseText = "\(mode.rawValue) 完成"
+                    self.summaries[mode] = summary
+                    self.phase = summary.ok ? .done : .failed
+                    self.phaseText = "\(mode.rawValue) \(summary.ok ? "完成" : "失败")"
                     self.lastCrashStep = ""
                     self.lastNote = ProbeTrace.lastNote
-                    self.phase = summary.ok ? .done : .failed
                 }
             } catch {
                 let summary = RunSummary(
@@ -97,7 +83,7 @@ final class ProbeRunner: ObservableObject {
                     detail: error.localizedDescription
                 )
                 DispatchQueue.main.async {
-                    if mode == .cpu { self.cpuSummary = summary } else { self.coreMLSummary = summary }
+                    self.summaries[mode] = summary
                     self.phase = .failed
                     self.phaseText = "\(mode.rawValue) 失败"
                     self.lastCrashStep = ProbeTrace.last
@@ -107,12 +93,10 @@ final class ProbeRunner: ObservableObject {
         }
     }
 
-    // MARK: - 图像链路（只算一次）
+    // MARK: - 图像链路（只算一次，所有后端共用）
 
-    private func prepareInputs() throws -> (ours: [Float], reference: [Float], expected: [Double]) {
-        if let ours = cachedTensor, let reference = cachedReference, let expected = cachedExpected {
-            return (ours, reference, expected)
-        }
+    private func prepareInputs() throws -> [Float] {
+        if let ours = cachedTensor, cachedExpected != nil { return ours }
         guard let imageURL = Bundle.main.url(forResource: "probe_image", withExtension: "jpg") else {
             throw ProbeError.missingFile("缺 probe_image.jpg")
         }
@@ -125,7 +109,6 @@ final class ProbeRunner: ObservableObject {
 
         let prepared = try PilImaging.prepareTensor(from: imageURL, size: Self.size, fraction: 1.0)
         let ours = prepared.tensor
-        imageSize = (prepared.gray.width, prepared.gray.height)
 
         let refData = try Data(contentsOf: refURL)
         guard refData.count == ours.count * 4 else {
@@ -150,6 +133,10 @@ final class ProbeRunner: ObservableObject {
         }
         tensorCheck = (dot / (sqrt(normA) * sqrt(normB)), maxDiff, absSum / Double(ours.count))
 
+        let expected = try String(contentsOf: expectedURL, encoding: .utf8)
+            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
+            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+
         var nanCount = 0, infCount = 0
         var minValue = Double.greatestFiniteMagnitude
         var maxValue = -Double.greatestFiniteMagnitude
@@ -161,18 +148,14 @@ final class ProbeRunner: ObservableObject {
             maxValue = Swift.max(maxValue, d)
         }
         ProbeTrace.note(
-            "元素 \(ours.count)；NaN \(nanCount)；Inf \(infCount)；" +
-            "min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))"
+            "图像余弦 \(String(format: "%.8f", tensorCheck.cosine))" +
+            "；原图 \(prepared.gray.width)×\(prepared.gray.height)" +
+            "；NaN \(nanCount)；min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))"
         )
 
-        let expected = try String(contentsOf: expectedURL, encoding: .utf8)
-            .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
-            .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
-
         cachedTensor = ours
-        cachedReference = reference
         cachedExpected = expected
-        return (ours, reference, expected)
+        return ours
     }
 
     // MARK: - 单次推理
@@ -186,19 +169,47 @@ final class ProbeRunner: ObservableObject {
         let sessionStarted = Date()
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
-        try options.setIntraOpNumThreads(1)
 
-        if mode == .coreML {
-            let coremlOptions = ORTCoreMLExecutionProviderOptions()
-            coremlOptions.useCPUOnly = false
-            coremlOptions.enableOnSubgraphs = false
-            coremlOptions.onlyEnableForDevicesWithANE = false
+        switch mode {
+        case .cpu1:
+            try options.setIntraOpNumThreads(1)
+            note = "1 线程"
+        case .cpu4:
+            try options.setIntraOpNumThreads(4)
+            note = "4 线程"
+        case .xnnpack4:
+            try options.setIntraOpNumThreads(1)
+            let xnn = ORTXnnpackExecutionProviderOptions()
+            xnn.intra_op_num_threads = 4
             do {
-                // 注意：这个方法的返回值在 Swift 里被推断为 Void，不能当 Bool 用
-                try options.appendCoreMLExecutionProvider(with: coremlOptions)
+                try options.appendXnnpackExecutionProvider(with: xnn)
+                note = "XNNPACK 4 线程"
+            } catch {
+                note = "XNNPACK 启用失败：\(error.localizedDescription)"
+            }
+        case .coreML:
+            try options.setIntraOpNumThreads(1)
+            let coreml = ORTCoreMLExecutionProviderOptions()
+            coreml.useCPUOnly = false
+            coreml.enableOnSubgraphs = false
+            coreml.onlyEnableForDevicesWithANE = false
+            do {
+                try options.appendCoreMLExecutionProvider(with: coreml)
                 note = "已请求 CoreML EP"
             } catch {
-                note = "CoreML EP 启用失败：\(error.localizedDescription)"
+                note = "CoreML 启用失败：\(error.localizedDescription)"
+            }
+        case .coreMLANE:
+            try options.setIntraOpNumThreads(1)
+            let coreml = ORTCoreMLExecutionProviderOptions()
+            coreml.useCPUOnly = false
+            coreml.enableOnSubgraphs = true
+            coreml.onlyEnableForDevicesWithANE = true
+            do {
+                try options.appendCoreMLExecutionProvider(with: coreml)
+                note = "CoreML 仅 ANE + 子图"
+            } catch {
+                note = "CoreML(ANE) 启用失败：\(error.localizedDescription)"
             }
         }
 
@@ -268,31 +279,28 @@ final class ProbeRunner: ObservableObject {
         guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
             throw ProbeError.missingFile("模型没打包进 App")
         }
-        let inputs = try prepareInputs()
+        let tensor = try prepareInputs()
 
-        // 预热一次 + 计时一次，取较快的
-        ProbeTrace.mark(mode == .cpu ? .runReference : .runOurs)
-        let first = try Self.inferOnce(modelPath: modelURL.path, values: inputs.ours, mode: mode)
-        let second = try Self.inferOnce(modelPath: modelURL.path, values: inputs.ours, mode: mode)
+        // 跑两次：第一次包含预热，取较快的一次作为纯推理
+        let first = try Self.inferOnce(modelPath: modelURL.path, values: tensor, mode: mode)
+        let second = try Self.inferOnce(modelPath: modelURL.path, values: tensor, mode: mode)
 
         let cls = Self.normalize(second.cls)
-        let featureCosine = Self.cosine(cls, inputs.expected)
+        let featureCosine = Self.cosine(cls, cachedExpected ?? [])
         ProbeTrace.mark(.done)
 
         let detail = """
-        图像链路：余弦 \(String(format: "%.8f", tensorCheck.cosine))，最大差 \(String(format: "%.6f", tensorCheck.maxDiff))，平均差 \(String(format: "%.6f", tensorCheck.meanDiff))
-        原图：\(imageSize.0)×\(imageSize.1)
-        \(first.note.isEmpty ? "" : first.note + "\n")建 session：\(String(format: "%.0f", first.sessionMs)) / \(String(format: "%.0f", second.sessionMs)) ms
+        \(first.note)
+        建 session：\(String(format: "%.0f", first.sessionMs)) / \(String(format: "%.0f", second.sessionMs)) ms
         推理：\(String(format: "%.0f", first.runMs)) / \(String(format: "%.0f", second.runMs)) ms
         特征余弦：\(String(format: "%.8f", featureCosine))
+        图像余弦：\(String(format: "%.8f", tensorCheck.cosine))
         """
-        ProbeTrace.note(ProbeTrace.lastNote + "；\(mode.rawValue) 特征余弦 " + String(format: "%.8f", featureCosine))
 
         return RunSummary(
             mode: mode,
             ok: true,
             note: second.note,
-            tensorCosine: tensorCheck.cosine,
             featureCosine: featureCosine,
             sessionMs: second.sessionMs,
             runMs: min(first.runMs, second.runMs),
