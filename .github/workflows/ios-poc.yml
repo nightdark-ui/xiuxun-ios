@@ -1,4 +1,4 @@
-name: Build iOS POC
+﻿name: Build iOS POC
 
 on:
   push:
@@ -72,7 +72,7 @@ jobs:
             sudo gem install cocoapods --no-document
           fi
           pod --version
-          pod install --repo-update 2>&1 | tee pod-install.log
+          pod install --verbose 2>&1 | tee pod-install.log
 
       - name: Build
         working-directory: POC

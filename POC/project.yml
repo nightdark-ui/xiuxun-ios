@@ -4,6 +4,7 @@ options:
   deploymentTarget:
     iOS: "15.0"
   createIntermediateGroups: true
+  generateEmptyDirectories: true
 
 targets:
   XiuxunPOC:
@@ -27,6 +28,20 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_BITCODE: "NO"
         CODE_SIGN_STYLE: Automatic
+
+# CI needs a SHARED scheme, otherwise "xcodebuild -scheme XiuxunPOC" fails
+# immediately with exit code 65 ("does not contain a scheme named ...").
+schemes:
+  XiuxunPOC:
+    build:
+      targets:
+        XiuxunPOC: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+    test:
+      config: Debug
 
 # Do NOT declare CocoaPods dependencies here: XcodeGen only knows
 # target / framework / sdk / package / carthage. The onnxruntime-objc pod
