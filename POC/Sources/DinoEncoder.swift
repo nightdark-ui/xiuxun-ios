@@ -30,7 +30,7 @@ final class DinoEncoder {
     let loadMs: Double
 
     init(variant: Variant, inputSize: Int = 224, threads: Int) throws {
-        guard let url = Bundle.main.url(forResource: variant.rawValue, withExtension: "onnx") else {
+        guard let url = DinoEncoder.resolveModelURL(variant: variant) else {
             throw EncoderError.missingModel(variant.rawValue + ".onnx")
         }
         self.variant = variant
@@ -48,6 +48,22 @@ final class DinoEncoder {
         self.inputName = first
         self.outputNames = Set(try session.outputNames())
         self.loadMs = Date().timeIntervalSince(started) * 1000
+    }
+
+    /// 模型查找顺序：图库包的 models/ → App 内嵌
+    /// 图库包里的 base 模型最小化 IPA 体积，也避免仓库塞 167MB。
+    static func resolveModelURL(variant: Variant) -> URL? {
+        let name = variant.rawValue
+        if let support = try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false
+        ) {
+            let candidate = support
+                .appendingPathComponent("Xiuxun/Gallery/models")
+                .appendingPathComponent(name + ".onnx")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return Bundle.main.url(forResource: name, withExtension: "onnx")
     }
 
     /// 批量编码：每张图各自一份张量，返回每张的 (cls, patches)
