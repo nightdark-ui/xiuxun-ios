@@ -6,6 +6,7 @@ import onnxruntime_objc
 enum ComputeMode: String, CaseIterable {
     case cpu1 = "CPU 1线程"
     case cpu4 = "CPU 4线程"
+    case cpuAll = "CPU 全核"
     case xnnpackAll = "XNNPACK 全核"
     case coreML = "CoreML"
     case coreMLANE = "CoreML(仅ANE)"
@@ -411,6 +412,10 @@ final class ProbeRunner: ObservableObject {
             case .cpu4:
                 try options.setIntraOpNumThreads(4)
                 return "4 线程"
+            case .cpuAll:
+                let cores = DeviceInfo.coreCount
+                try options.setIntraOpNumThreads(Int32(cores))
+                return "CPU \(cores) 线程（全核）"
             case .xnnpackAll:
                 try options.setIntraOpNumThreads(1)
                 let threads = DeviceInfo.coreCount
