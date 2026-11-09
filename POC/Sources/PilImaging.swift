@@ -67,7 +67,7 @@ enum PilImaging {
     // ---------------- 裁切 ----------------
 
     static func centerCrop(_ image: GrayImage, fraction: Double) -> GrayImage {
-        let side = max(32, Int(min(image.width, image.height) * fraction))
+        let side = max(32, Int(Double(min(image.width, image.height)) * fraction))
         let left = (image.width - side) / 2
         let top = (image.height - side) / 2
         var output = [UInt8](repeating: 0, count: side * side)
