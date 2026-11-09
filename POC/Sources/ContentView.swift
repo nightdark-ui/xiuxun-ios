@@ -16,7 +16,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v10 · 后端对比")
+                    Text("构建 v11 · 自动标定线程")
                         .font(.caption2)
                         .foregroundColor(.blue)
                     Text(DeviceInfo.summary)
@@ -53,6 +53,46 @@ struct ContentView: View {
                         }
                         .disabled(isBusy)
                     }
+                }
+
+                Button {
+                    runner.autotune()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("自动标定线程数（1…\(DeviceInfo.coreCount)）").bold()
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .background(Color(red: 0.35, green: 0.35, blue: 0.55))
+                    .foregroundColor(.white)
+                    .cornerRadius(20)
+                }
+                .disabled(isBusy)
+
+                if !runner.autotuneRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("线程标定结果").font(.subheadline).bold()
+                        ForEach(runner.autotuneRows, id: \.threads) { row in
+                            HStack {
+                                Text("\(row.threads) 线程")
+                                    .font(.system(size: 12, design: .monospaced))
+                                Spacer()
+                                Text(String(format: "%.0f ms", row.ms))
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .bold()
+                            }
+                        }
+                        if !runner.autotuneBest.isEmpty {
+                            Text(runner.autotuneBest)
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
                 }
 
                 Text(runner.phaseText.isEmpty ? runner.phase.rawValue : runner.phaseText)

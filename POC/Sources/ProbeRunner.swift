@@ -11,34 +11,6 @@ enum ComputeMode: String, CaseIterable {
     case coreMLANE = "CoreML(仅ANE)"
 }
 
-enum DeviceInfo {
-    /// 物理核心数（含能效核）
-    static var coreCount: Int { ProcessInfo.processInfo.activeProcessorCount }
-
-    /// 建议给 XNNPACK 用的线程数：留一个核给 UI 和系统
-    static var recommendedThreads: Int { max(1, coreCount - 1) }
-
-    static var memoryGB: Double {
-        Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0 / 1024.0
-    }
-
-    /// 机型标识（如 iPhone17,1）
-    static var machine: String {
-        var size = 0
-        sysctlbyname("hw.machine", nil, &size, nil, 0)
-        var model = [CChar](repeating: 0, count: max(size, 1))
-        sysctlbyname("hw.machine", &model, &size, nil, 0)
-        return String(cString: model)
-    }
-
-    static var summary: String {
-        String(
-            format: "机型 %@ · %d 核 · 内存 %.1f GB · 建议线程 %d",
-            machine, coreCount, memoryGB, recommendedThreads
-        )
-    }
-}
-
 struct RunSummary {
     var mode: ComputeMode
     var ok: Bool
@@ -70,12 +42,50 @@ enum ProbeError: LocalizedError {
     }
 }
 
+/// 设备信息与线程策略（正式版会复用这套逻辑）
+enum DeviceInfo {
+    static var coreCount: Int { ProcessInfo.processInfo.activeProcessorCount }
+    static var memoryGB: Double {
+        Double(ProcessInfo.processInfo.physicalMemory) / 1024.0 / 1024.0 / 1024.0
+    }
+    static var machine: String {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        var model = [CChar](repeating: 0, count: max(size, 1))
+        sysctlbyname("hw.machine", &model, &size, nil, 0)
+        return String(cString: model)
+    }
+
+    /// 自动标定的结果缓存键
+    private static let threadsKey = "perf.bestThreads"
+
+    static var savedBestThreads: Int {
+        get {
+            let value = UserDefaults.standard.integer(forKey: threadsKey)
+            return value > 0 ? value : defaultThreads
+        }
+        set { UserDefaults.standard.set(newValue, forKey: threadsKey) }
+    }
+
+    /// 未标定时的保守默认：4 线程（实测 6 核机器上最优）
+    static var defaultThreads: Int { min(4, max(1, coreCount - 1)) }
+
+    static var summary: String {
+        String(
+            format: "机型 %@ · %d 核 · 内存 %.1f GB · 当前线程 %d",
+            machine, coreCount, memoryGB, savedBestThreads
+        )
+    }
+}
+
 final class ProbeRunner: ObservableObject {
     @Published var phase: ProbePhase = .idle
     @Published var phaseText: String = ""
     @Published var summaries: [ComputeMode: RunSummary] = [:]
     @Published var lastCrashStep: String = ProbeTrace.last
     @Published var lastNote: String = ProbeTrace.lastNote
+    @Published var autotuneRows: [(threads: Int, ms: Double)] = []
+    @Published var autotuneBest: String = ""
 
     private static let size = 224
     private static let width = 384
@@ -84,8 +94,10 @@ final class ProbeRunner: ObservableObject {
     private var cachedExpected: [Double]?
     private var tensorCheck: (cosine: Double, maxDiff: Double, meanDiff: Double) = (.nan, .nan, .nan)
 
+    // MARK: - 对外入口
+
     func run(mode: ComputeMode) {
-        if phase == .running { return }
+        guard phase != .running else { return }
         phase = .running
         phaseText = "\(mode.rawValue) 运行中…"
         ProbeTrace.clear()
@@ -105,8 +117,7 @@ final class ProbeRunner: ObservableObject {
                 }
             } catch {
                 let summary = RunSummary(
-                    mode: mode,
-                    ok: false,
+                    mode: mode, ok: false,
                     note: "中断于「\(ProbeTrace.last)」",
                     detail: error.localizedDescription
                 )
@@ -121,7 +132,68 @@ final class ProbeRunner: ObservableObject {
         }
     }
 
-    // MARK: - 图像链路（只算一次，所有后端共用）
+    /// 自动标定：1…核心数 逐个试，挑最快的线程数并写入 UserDefaults
+    func autotune() {
+        guard phase != .running else { return }
+        phase = .running
+        phaseText = "自动标定线程数…"
+        autotuneRows = []
+        autotuneBest = ""
+        ProbeTrace.clear()
+        ProbeTrace.clearNote()
+        ProbeTrace.mark(.start)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                guard let modelURL = Bundle.main.url(
+                    forResource: "dinov2-small-fp16", withExtension: "onnx"
+                ) else {
+                    throw ProbeError.missingFile("模型没打包进 App")
+                }
+                let tensor = try self.prepareInputs()
+
+                var rows: [(Int, Double)] = []
+                for threads in 1...max(1, DeviceInfo.coreCount) {
+                    var best = Double.greatestFiniteMagnitude
+                    for _ in 0..<2 {
+                        let result = try Self.inferCore(
+                            modelPath: modelURL.path,
+                            values: tensor,
+                            configure: { options in
+                                try options.setIntraOpNumThreads(Int32(threads))
+                                return "CPU \(threads) 线程"
+                            }
+                        )
+                        best = min(best, result.runMs)
+                    }
+                    rows.append((threads, best))
+                }
+
+                let fastest = rows.min { $0.1 < $1.1 }
+                let bestThreads = fastest?.0 ?? DeviceInfo.defaultThreads
+                DeviceInfo.savedBestThreads = bestThreads
+
+                DispatchQueue.main.async {
+                    self.autotuneRows = rows
+                    self.autotuneBest = "最快：\(bestThreads) 线程（\(String(format: "%.0f", fastest?.1 ?? 0)) ms），已保存"
+                    self.phase = .done
+                    self.phaseText = "标定完成"
+                    self.lastCrashStep = ""
+                    self.lastNote = ProbeTrace.lastNote
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.phase = .failed
+                    self.phaseText = "标定失败"
+                    self.lastCrashStep = ProbeTrace.last
+                    self.lastNote = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                }
+            }
+        }
+    }
+
+    // MARK: - 图像链路（只算一次）
 
     private func prepareInputs() throws -> [Float] {
         if let ours = cachedTensor, cachedExpected != nil { return ours }
@@ -165,20 +237,9 @@ final class ProbeRunner: ObservableObject {
             .split(whereSeparator: { $0 == "\n" || $0 == "\r" })
             .compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
 
-        var nanCount = 0, infCount = 0
-        var minValue = Double.greatestFiniteMagnitude
-        var maxValue = -Double.greatestFiniteMagnitude
-        for value in ours {
-            let d = Double(value)
-            if d.isNaN { nanCount += 1; continue }
-            if d.isInfinite { infCount += 1; continue }
-            minValue = Swift.min(minValue, d)
-            maxValue = Swift.max(maxValue, d)
-        }
         ProbeTrace.note(
             "图像余弦 \(String(format: "%.8f", tensorCheck.cosine))" +
-            "；原图 \(prepared.gray.width)×\(prepared.gray.height)" +
-            "；NaN \(nanCount)；min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))"
+            "；\(DeviceInfo.summary)"
         )
 
         cachedTensor = ours
@@ -186,61 +247,25 @@ final class ProbeRunner: ObservableObject {
         return ours
     }
 
-    // MARK: - 单次推理
+    // MARK: - 推理核心
 
-    private static func inferOnce(
+    private struct InferResult {
+        var cls: [Double]
+        var sessionMs: Double
+        var runMs: Double
+        var note: String
+    }
+
+    /// 通用推理：configure 里配置 session options，同时返回说明文字
+    private static func inferCore(
         modelPath: String,
         values: [Float],
-        mode: ComputeMode
-    ) throws -> (cls: [Double], sessionMs: Double, runMs: Double, note: String) {
-        var note = ""
+        configure: (ORTSessionOptions) throws -> String
+    ) throws -> InferResult {
         let sessionStarted = Date()
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
-
-        switch mode {
-        case .cpu1:
-            try options.setIntraOpNumThreads(1)
-            note = "1 线程"
-        case .cpu4:
-            try options.setIntraOpNumThreads(4)
-            note = "4 线程"
-        case .xnnpackAll:
-            try options.setIntraOpNumThreads(1)
-            let threads = DeviceInfo.recommendedThreads
-            let xnn = ORTXnnpackExecutionProviderOptions()
-            xnn.intra_op_num_threads = Int32(threads)
-            do {
-                try options.appendXnnpackExecutionProvider(with: xnn)
-                note = "XNNPACK \(threads) 线程（全核）"
-            } catch {
-                note = "XNNPACK 启用失败：\(error.localizedDescription)"
-            }
-        case .coreML:
-            try options.setIntraOpNumThreads(1)
-            let coreml = ORTCoreMLExecutionProviderOptions()
-            coreml.useCPUOnly = false
-            coreml.enableOnSubgraphs = false
-            coreml.onlyEnableForDevicesWithANE = false
-            do {
-                try options.appendCoreMLExecutionProvider(with: coreml)
-                note = "已请求 CoreML EP"
-            } catch {
-                note = "CoreML 启用失败：\(error.localizedDescription)"
-            }
-        case .coreMLANE:
-            try options.setIntraOpNumThreads(1)
-            let coreml = ORTCoreMLExecutionProviderOptions()
-            coreml.useCPUOnly = false
-            coreml.enableOnSubgraphs = true
-            coreml.onlyEnableForDevicesWithANE = true
-            do {
-                try options.appendCoreMLExecutionProvider(with: coreml)
-                note = "CoreML 仅 ANE + 子图"
-            } catch {
-                note = "CoreML(ANE) 启用失败：\(error.localizedDescription)"
-            }
-        }
+        let note = try configure(options)
 
         let session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: options)
         let inputNames = try session.inputNames()
@@ -251,10 +276,8 @@ final class ProbeRunner: ObservableObject {
         let runStarted = Date()
         let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
         let shape: [NSNumber] = [
-            NSNumber(value: 1),
-            NSNumber(value: 3),
-            NSNumber(value: size),
-            NSNumber(value: size),
+            NSNumber(value: 1), NSNumber(value: 3),
+            NSNumber(value: size), NSNumber(value: size),
         ]
         let tensor = try ORTValue(
             tensorData: NSMutableData(data: data),
@@ -279,7 +302,47 @@ final class ProbeRunner: ObservableObject {
             for i in 0..<width { cls[i] = Double(base[i]) }
         }
         let runMs = Date().timeIntervalSince(runStarted) * 1000
-        return (cls, sessionMs, runMs, note)
+        return InferResult(cls: cls, sessionMs: sessionMs, runMs: runMs, note: note)
+    }
+
+    private static func inferOnce(
+        modelPath: String,
+        values: [Float],
+        mode: ComputeMode
+    ) throws -> InferResult {
+        try inferCore(modelPath: modelPath, values: values) { options in
+            switch mode {
+            case .cpu1:
+                try options.setIntraOpNumThreads(1)
+                return "1 线程"
+            case .cpu4:
+                try options.setIntraOpNumThreads(4)
+                return "4 线程"
+            case .xnnpackAll:
+                try options.setIntraOpNumThreads(1)
+                let threads = DeviceInfo.coreCount
+                let xnn = ORTXnnpackExecutionProviderOptions()
+                xnn.intra_op_num_threads = Int32(threads)
+                try options.appendXnnpackExecutionProvider(with: xnn)
+                return "XNNPACK \(threads) 线程"
+            case .coreML:
+                try options.setIntraOpNumThreads(1)
+                let coreml = ORTCoreMLExecutionProviderOptions()
+                coreml.useCPUOnly = false
+                coreml.enableOnSubgraphs = false
+                coreml.onlyEnableForDevicesWithANE = false
+                try options.appendCoreMLExecutionProvider(with: coreml)
+                return "已请求 CoreML EP"
+            case .coreMLANE:
+                try options.setIntraOpNumThreads(1)
+                let coreml = ORTCoreMLExecutionProviderOptions()
+                coreml.useCPUOnly = false
+                coreml.enableOnSubgraphs = true
+                coreml.onlyEnableForDevicesWithANE = true
+                try options.appendCoreMLExecutionProvider(with: coreml)
+                return "CoreML 仅 ANE + 子图"
+            }
+        }
     }
 
     private static func normalize(_ values: [Double]) -> [Double] {
@@ -310,7 +373,6 @@ final class ProbeRunner: ObservableObject {
         }
         let tensor = try prepareInputs()
 
-        // 跑两次：第一次包含预热，取较快的一次作为纯推理
         let first = try Self.inferOnce(modelPath: modelURL.path, values: tensor, mode: mode)
         let second = try Self.inferOnce(modelPath: modelURL.path, values: tensor, mode: mode)
 
@@ -323,9 +385,7 @@ final class ProbeRunner: ObservableObject {
         建 session：\(String(format: "%.0f", first.sessionMs)) / \(String(format: "%.0f", second.sessionMs)) ms
         推理：\(String(format: "%.0f", first.runMs)) / \(String(format: "%.0f", second.runMs)) ms
         特征余弦：\(String(format: "%.8f", featureCosine))
-        图像余弦：\(String(format: "%.8f", tensorCheck.cosine))
         """
-
         return RunSummary(
             mode: mode,
             ok: true,
