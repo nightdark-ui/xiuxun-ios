@@ -16,7 +16,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v11 · 自动标定线程")
+                    Text("构建 v12 · INT8 与批处理")
                         .font(.caption2)
                         .foregroundColor(.blue)
                     Text(DeviceInfo.summary)
@@ -95,6 +95,49 @@ struct ContentView: View {
                     .cornerRadius(12)
                 }
 
+                Button {
+                    runner.batchTest()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("批处理测试（1/4/10/20）").bold()
+                        Spacer()
+                    }
+                    .padding(.vertical, 12)
+                    .background(Color(red: 0.15, green: 0.45, blue: 0.50))
+                    .foregroundColor(.white)
+                    .cornerRadius(20)
+                }
+                .disabled(isBusy)
+
+                if !runner.batchRows.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("批处理结果").font(.subheadline).bold()
+                        ForEach(runner.batchRows, id: \.size) { row in
+                            HStack {
+                                Text("批 \(row.size)")
+                                    .font(.system(size: 12, design: .monospaced))
+                                Spacer()
+                                Text(String(format: "总 %.0f ms", row.ms))
+                                    .font(.system(size: 12, design: .monospaced))
+                                Text(String(format: "每张 %.0f ms", row.perImage))
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .bold()
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        if !runner.batchBest.isEmpty {
+                            Text(runner.batchBest)
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(12)
+                }
+
                 Text(runner.phaseText.isEmpty ? runner.phase.rawValue : runner.phaseText)
                     .font(.footnote)
                     .foregroundColor(.secondary)
@@ -137,6 +180,7 @@ struct ContentView: View {
         case .xnnpackAll: return Color(red: 0.20, green: 0.50, blue: 0.75)
         case .coreML: return Color(red: 0.13, green: 0.55, blue: 0.35)
         case .coreMLANE: return Color(red: 0.35, green: 0.35, blue: 0.55)
+        case .int8: return Color(red: 0.55, green: 0.30, blue: 0.55)
         }
     }
 

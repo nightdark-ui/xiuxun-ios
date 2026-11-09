@@ -9,6 +9,7 @@ enum ComputeMode: String, CaseIterable {
     case xnnpackAll = "XNNPACK 全核"
     case coreML = "CoreML"
     case coreMLANE = "CoreML(仅ANE)"
+    case int8 = "INT8 4线程"
 }
 
 struct RunSummary {
@@ -193,6 +194,99 @@ final class ProbeRunner: ObservableObject {
         }
     }
 
+    // MARK: - 批处理规模测试
+
+    @Published var batchRows: [(size: Int, ms: Double, perImage: Double)] = []
+    @Published var batchBest: String = ""
+
+    /// 测试 batch = 1/4/10/20 时的吞吐，找出每张图最划算的批大小
+    func batchTest() {
+        guard phase != .running else { return }
+        phase = .running
+        phaseText = "批处理测试…"
+        batchRows = []
+        batchBest = ""
+        ProbeTrace.clear()
+        ProbeTrace.mark(.start)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            do {
+                guard let modelURL = Bundle.main.url(
+                    forResource: "dinov2-small-fp16", withExtension: "onnx"
+                ) else {
+                    throw ProbeError.missingFile("模型没打包进 App")
+                }
+                let tensor = try self.prepareInputs()
+                let threads = Int32(DeviceInfo.savedBestThreads)
+
+                var rows: [(Int, Double, Double)] = []
+                for batch in [1, 4, 10, 20] {
+                    let ms = try Self.runBatch(
+                        modelPath: modelURL.path,
+                        single: tensor,
+                        batch: batch,
+                        threads: threads
+                    )
+                    rows.append((batch, ms, ms / Double(batch)))
+                }
+                let best = rows.min { $0.2 < $1.2 }
+                DispatchQueue.main.async {
+                    self.batchRows = rows.map { (size: $0.0, ms: $0.1, perImage: $0.2) }
+                    self.batchBest = best.map {
+                        String(format: "每张最省：批 %d（每张 %.0f ms）", $0.0, $0.2)
+                    } ?? ""
+                    self.phase = .done
+                    self.phaseText = "批处理测试完成"
+                    self.lastCrashStep = ""
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.phase = .failed
+                    self.phaseText = "批处理测试失败"
+                    self.lastCrashStep = ProbeTrace.last
+                    self.lastNote = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                }
+            }
+        }
+    }
+
+    private static func runBatch(
+        modelPath: String,
+        single: [Float],
+        batch: Int,
+        threads: Int32
+    ) throws -> Double {
+        let env = try ORTEnv(loggingLevel: .warning)
+        let options = try ORTSessionOptions()
+        try options.setIntraOpNumThreads(threads)
+        let session = try ORTSession(env: env, modelPath: modelPath, sessionOptions: options)
+        guard let inputName = try session.inputNames().first else {
+            throw ProbeError.badOutput("模型没有输入")
+        }
+        let outputNames = Set(try session.outputNames())
+
+        var values = [Float]()
+        values.reserveCapacity(single.count * batch)
+        for _ in 0..<batch { values.append(contentsOf: single) }
+
+        let shape: [NSNumber] = [
+            NSNumber(value: batch), NSNumber(value: 3),
+            NSNumber(value: size), NSNumber(value: size),
+        ]
+        let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
+        let tensor = try ORTValue(
+            tensorData: NSMutableData(data: data),
+            elementType: .float,
+            shape: shape
+        )
+        // 预热一次
+        _ = try session.run(withInputs: [inputName: tensor], outputNames: outputNames, runOptions: nil)
+        let started = Date()
+        _ = try session.run(withInputs: [inputName: tensor], outputNames: outputNames, runOptions: nil)
+        return Date().timeIntervalSince(started) * 1000
+    }
+
     // MARK: - 图像链路（只算一次）
 
     private func prepareInputs() throws -> [Float] {
@@ -341,6 +435,9 @@ final class ProbeRunner: ObservableObject {
                 coreml.onlyEnableForDevicesWithANE = true
                 try options.appendCoreMLExecutionProvider(with: coreml)
                 return "CoreML 仅 ANE + 子图"
+            case .int8:
+                try options.setIntraOpNumThreads(4)
+                return "INT8 模型 4 线程"
             }
         }
     }
@@ -367,9 +464,15 @@ final class ProbeRunner: ObservableObject {
 
     // MARK: - 主流程
 
+    private static func modelName(for mode: ComputeMode) -> String {
+        mode == .int8 ? "dinov2-small-int8-fixed" : "dinov2-small-fp16"
+    }
+
     private func runSync(mode: ComputeMode) throws -> RunSummary {
-        guard let modelURL = Bundle.main.url(forResource: "dinov2-small-fp16", withExtension: "onnx") else {
-            throw ProbeError.missingFile("模型没打包进 App")
+        guard let modelURL = Bundle.main.url(
+            forResource: Self.modelName(for: mode), withExtension: "onnx"
+        ) else {
+            throw ProbeError.missingFile("缺少模型：\(Self.modelName(for: mode)).onnx")
         }
         let tensor = try prepareInputs()
 
