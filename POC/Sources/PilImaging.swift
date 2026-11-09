@@ -15,6 +15,8 @@ enum ProbeStep: String {
     case tensor = "归一化"
     case loadSession = "加载模型"
     case buildTensor = "构造张量"
+    case runReference = "跑参考张量"
+    case runOurs = "跑自算张量"
     case runSession = "session.run"
     case readOutput = "读取输出"
     case runModel = "模型推理"

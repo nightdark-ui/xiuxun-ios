@@ -181,21 +181,27 @@ final class ProbeRunner: ObservableObject {
             "；预期 150528 个"
         )
 
-        for _ in 0..<3 {
+        // ---------- A/B 测试 ----------
+        // 先用「PC 导出的参考张量」跑一次（v1 已证明这份数据能跑通），
+        // 再用「我们自己算的张量」跑。哪一步崩，断点会直接标出来。
+        var referenceTensor = [Float](repeating: 0, count: ours.count)
+        refData.withUnsafeBytes { raw in
+            guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
+            for i in 0..<ours.count { referenceTensor[i] = base[i] }
+        }
+
+        @inline(__always)
+        func infer(_ values: [Float]) throws -> [Double] {
             ProbeTrace.mark(.buildTensor)
-            let started = Date()
             let shape: [NSNumber] = [
                 NSNumber(value: 1),
                 NSNumber(value: 3),
                 NSNumber(value: size),
                 NSNumber(value: size),
             ]
-            // 用 withUnsafeBytes + NSMutableData(bytes:) 明确拷贝一份
-            let tensorData: NSMutableData = ours.withUnsafeBytes { raw in
-                NSMutableData(bytes: raw.baseAddress!, length: raw.count)
-            }
+            let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
             let tensor = try ORTValue(
-                tensorData: tensorData,
+                tensorData: NSMutableData(data: data),
                 elementType: .float,
                 shape: shape
             )
@@ -210,12 +216,42 @@ final class ProbeRunner: ObservableObject {
             let outputData = try firstOutput.tensorData() as Data
             let floatCount = outputData.count / 4
             guard floatCount >= width else { throw ProbeError.badOutput("输出太小：\(floatCount) 个 float") }
-
             var cls = [Double](repeating: 0, count: width)
             outputData.withUnsafeBytes { raw in
                 guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
                 for i in 0..<width { cls[i] = Double(base[i]) }
             }
+            return cls
+        }
+
+        // 第一次：参考张量（验证 ORT 调用本身没问题）
+        ProbeTrace.mark(.runReference)
+        let refCls = try infer(referenceTensor)
+        var refCosine = 0.0
+        do {
+            var cls = refCls
+            var norm = 0.0
+            for v in cls { norm += v * v }
+            norm = sqrt(norm)
+            if norm > 1e-9 { for i in 0..<width { cls[i] /= norm } }
+            var dot = 0.0, na = 0.0, nb = 0.0
+            let limit = min(width, expected.count)
+            for i in 0..<limit {
+                dot += cls[i] * expected[i]
+                na += cls[i] * cls[i]
+                nb += expected[i] * expected[i]
+            }
+            refCosine = dot / (sqrt(na) * sqrt(nb))
+        }
+
+        // 第二次：自算张量（验证我们的数据能跑）
+        ProbeTrace.mark(.runOurs)
+        _ = try infer(ours)
+
+        for _ in 0..<3 {
+            let started = Date()
+            ProbeTrace.mark(.runOurs)
+            var cls = try infer(ours)
             var norm = 0.0
             for v in cls { norm += v * v }
             norm = sqrt(norm)
@@ -233,6 +269,11 @@ final class ProbeRunner: ObservableObject {
             featureMaxDiff = mx
             timings.append(Date().timeIntervalSince(started) * 1000)
         }
+
+        // 参考张量那一路的余弦（能证明 ORT 调用本身没问题）
+        ProbeTrace.note(
+            ProbeTrace.lastNote + "；参考张量余弦 " + String(format: "%.8f", refCosine)
+        )
 
         ProbeTrace.mark(.done)
 
