@@ -4,10 +4,11 @@ import onnxruntime_objc
 
 /// 数值一致性探针。
 ///
-/// 做三件事：
-/// 1. 用 PC 端导出的 `probe_input.bin`（1×3×224×224 float32）跑一遍模型
-/// 2. 取 CLS token（前 384 个）并做 L2 归一化
-/// 3. 与 PC 端导出的 `probe_expected.txt` 逐项比较，输出余弦
+/// 用 PC 端导出的 `probe_input.bin`（1×3×224×224 float32）跑一遍模型，
+/// 取 CLS token（前 384 个）做 L2 归一化，再与 `probe_expected.txt` 比较。
+///
+/// 注意：这里刻意只用最保守的 API（env / session / ORTValue / tensorData），
+/// 不设置图优化级别、不读取 tensorShape，避免不同 ORT 版本的接口差异。
 enum ProbePhase: String {
     case idle = "未运行"
     case running = "推理中…"
@@ -95,7 +96,6 @@ final class ProbeRunner: ObservableObject {
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(1)
-        try options.setGraphOptimizationLevel(.disabled)
         let session = try ORTSession(env: env, modelPath: modelURL.path, sessionOptions: options)
 
         let inputNames = try session.inputNames()
@@ -118,15 +118,13 @@ final class ProbeRunner: ObservableObject {
         }
 
         let outputData = try firstOutput.tensorData() as Data
-        let shapeNumbers = try firstOutput.tensorShape()
-        let outputShape = shapeNumbers.map { $0.intValue }
-        let total = outputShape.reduce(1, *)
-        guard total * 4 == outputData.count else {
-            throw ProbeError.badOutput("输出形状异常：\(outputShape)，字节数 \(outputData.count)")
+        let floatCount = outputData.count / 4
+        guard floatCount > 0, floatCount % width == 0 else {
+            throw ProbeError.badOutput("输出字节数 \(outputData.count) 不是 \(width) 的整数倍")
         }
+        let tokens = floatCount / width
 
-        // 输出是 (1, tokens, 384)，第 0 个 token 是 CLS
-        let tokens = total / width
+        // 第 0 个 token 是 CLS
         var cls = [Double](repeating: 0, count: width)
         outputData.withUnsafeBytes { raw in
             let floats = raw.bindMemory(to: Float.self)
@@ -142,7 +140,7 @@ final class ProbeRunner: ObservableObject {
         }
 
         guard expected.count == width else {
-            throw ProbeError.badOutput("probe_expected.txt 有 \(expected.count) 个数，应为 384")
+            throw ProbeError.badOutput("probe_expected.txt 有 \(expected.count) 个数，应为 \(width)")
         }
 
         var dot = 0.0, normA = 0.0, normB = 0.0, maxDiff = 0.0
@@ -167,7 +165,7 @@ final class ProbeRunner: ObservableObject {
         let log = """
         模型：\(modelURL.lastPathComponent)
         输入：\(inputShape.map(String.init).joined(separator: "x"))，\(inputData.count) 字节
-        输出：\(tokens) token × \(width)，取第 0 个 CLS 并归一化
+        输出：\(tokens) token × \(width)（\(floatCount) 个 float）
         余弦：\(String(format: "%.8f", cosine))
         最大单项差：\(String(format: "%.8f", maxDiff))
         耗时：\(String(format: "%.0f", elapsedMs)) ms

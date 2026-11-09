@@ -74,6 +74,12 @@ jobs:
           pod --version
           pod install --verbose 2>&1 | tee pod-install.log
 
+      - name: Verify workspace and scheme
+        working-directory: POC
+        run: |
+          set -x
+          ls -la
+          xcodebuild -list -workspace XiuxunPOC.xcworkspace || true
       - name: Build
         working-directory: POC
         run: |
@@ -108,6 +114,18 @@ jobs:
           path: POC/XiuxunPOC-unsigned.ipa
           retention-days: 14
 
+      - name: Dump logs
+        if: always()
+        run: |
+          for f in POC/pod-install.log POC/build.log; do
+            if [ -f "$f" ]; then
+              echo "::group::$f (last 80 lines)"
+              tail -n 80 "$f" || true
+              echo "::endgroup::"
+            else
+              echo "$f not found"
+            fi
+          done
       - name: Upload logs (always)
         if: always()
         uses: actions/upload-artifact@v4
