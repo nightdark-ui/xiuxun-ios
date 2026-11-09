@@ -8,17 +8,14 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v5")
+                    Text("构建 v6 · CPU 与 CoreML 对比")
                         .font(.caption2)
                         .foregroundColor(.blue)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
                 }
 
-                // 崩溃断点：如果上次运行中途崩了，这里会显示停在哪一步
                 if !runner.lastCrashStep.isEmpty {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -33,66 +30,56 @@ struct ContentView: View {
                     .cornerRadius(10)
                 }
 
-                // 张量体检：推理前记录的元素数 / NaN / 极值，崩溃后仍可查看
-                if !runner.lastNote.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("上次张量体检").font(.caption2).foregroundColor(.secondary)
-                        Text(runner.lastNote)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
+                HStack(spacing: 10) {
+                    Button {
+                        runner.run(mode: .cpu)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("CPU 测试").bold()
+                            Spacer()
+                        }
+                        .padding(.vertical, 12)
+                        .background(Color(red: 0.95, green: 0.40, blue: 0.13))
+                        .foregroundColor(.white)
+                        .cornerRadius(22)
                     }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.secondarySystemBackground))
-                    .cornerRadius(10)
+                    .disabled(isBusy)
+
+                    Button {
+                        runner.run(mode: .coreML)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("CoreML 测试").bold()
+                            Spacer()
+                        }
+                        .padding(.vertical, 12)
+                        .background(Color(red: 0.13, green: 0.55, blue: 0.35))
+                        .foregroundColor(.white)
+                        .cornerRadius(22)
+                    }
+                    .disabled(isBusy)
                 }
 
-                Button {
-                    runner.run()
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text(isBusy ? "运行中…" : "开始验证").bold()
-                        Spacer()
-                    }
-                    .padding(.vertical, 14)
-                    .background(Color(red: 0.95, green: 0.40, blue: 0.13))
-                    .foregroundColor(.white)
-                    .cornerRadius(26)
-                }
-                .disabled(isBusy)
-
-                Text(runner.phase.rawValue)
+                Text(runner.phaseText.isEmpty ? runner.phase.rawValue : runner.phaseText)
                     .font(.footnote)
                     .foregroundColor(.secondary)
 
-                if !runner.tensorCosine.isNaN {
-                    HStack(spacing: 10) {
-                        metric("图像链路余弦", String(format: "%.6f", runner.tensorCosine))
-                        metric("最大差", String(format: "%.5f", runner.tensorMaxDiff))
-                    }
-                    HStack(spacing: 10) {
-                        metric("特征余弦", String(format: "%.6f", runner.featureCosine))
-                        metric("单次耗时", String(format: "%.0f ms", runner.runMs))
-                    }
+                if let cpu = runner.cpuSummary {
+                    summaryCard(cpu, accent: .orange)
                 }
-
-                if !runner.log.isEmpty {
-                    Text(runner.log)
-                        .font(.system(size: 12, design: .monospaced))
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
+                if let coreML = runner.coreMLSummary {
+                    summaryCard(coreML, accent: .green)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("判定标准").font(.footnote).bold()
-                    Text("图像链路余弦 ≥ 0.9999 → 缩放/归一化与 PC 一致")
+                    Text("怎么读").font(.footnote).bold()
+                    Text("先点 CPU 测试，再点 CoreML 测试，两边数字直接对比")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("特征余弦 ≥ 0.999 → 模型输出一致")
+                    Text("「推理」是纯推理耗时；「建 session」包含 CoreML 首次编译，通常更慢")
                         .font(.caption).foregroundColor(.secondary)
-                    Text("纯推理取三次最快，用来估算整次搜索耗时")
+                    Text("CoreML 的特征余弦若低于 0.999，说明数值漂移，不能直接用于搜索")
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.top, 6)
@@ -101,19 +88,56 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private func summaryCard(_ summary: RunSummary, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(summary.mode.rawValue)
+                    .font(.subheadline).bold()
+                    .foregroundColor(accent)
+                Spacer()
+                Text(summary.ok ? "完成" : "失败")
+                    .font(.caption)
+                    .foregroundColor(summary.ok ? .secondary : .red)
+            }
+
+            if summary.ok {
+                HStack(spacing: 8) {
+                    metric("特征余弦", String(format: "%.6f", summary.featureCosine))
+                    metric("推理", String(format: "%.0f ms", summary.runMs))
+                    metric("建 session", String(format: "%.0f ms", summary.sessionMs))
+                }
+                Text(summary.detail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            } else {
+                Text(summary.note.isEmpty ? "失败" : summary.note)
+                    .font(.footnote)
+                    .foregroundColor(.red)
+                Text(summary.detail)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemBackground))
+        .cornerRadius(12)
+    }
+
     private func metric(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 3) {
             Text(title).font(.caption2).foregroundColor(.secondary)
             Text(value)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .bold()
                 .minimumScaleFactor(0.55)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
+        .padding(.vertical, 8)
+        .background(Color(.tertiarySystemBackground))
+        .cornerRadius(8)
     }
 }
 
