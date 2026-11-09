@@ -9,7 +9,6 @@ enum ComputeMode: String, CaseIterable {
     case xnnpackAll = "XNNPACK 全核"
     case coreML = "CoreML"
     case coreMLANE = "CoreML(仅ANE)"
-    case int8 = "INT8 4线程"
 }
 
 struct RunSummary {
@@ -435,9 +434,6 @@ final class ProbeRunner: ObservableObject {
                 coreml.onlyEnableForDevicesWithANE = true
                 try options.appendCoreMLExecutionProvider(with: coreml)
                 return "CoreML 仅 ANE + 子图"
-            case .int8:
-                try options.setIntraOpNumThreads(4)
-                return "INT8 模型 4 线程"
             }
         }
     }
@@ -464,8 +460,9 @@ final class ProbeRunner: ObservableObject {
 
     // MARK: - 主流程
 
+    /// 与 PC 完全一致：只用 FP16 模型（不使用 INT8）
     private static func modelName(for mode: ComputeMode) -> String {
-        mode == .int8 ? "dinov2-small-int8-fixed" : "dinov2-small-fp16"
+        "dinov2-small-fp16"
     }
 
     private func runSync(mode: ComputeMode) throws -> RunSummary {
