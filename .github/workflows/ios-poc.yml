@@ -17,38 +17,62 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show toolchain
+      - name: Show environment
         run: |
-          echo "--- xcodebuild ---"
-          xcodebuild -version || true
-          echo "--- swift ---"
-          swift --version || true
-          echo "--- xcodegen ---"
-          which xcodegen || echo "no xcodegen"
-          echo "--- pod ---"
-          which pod || echo "no pod"
+          echo "::group::System"
+          sw_vers
+          uname -m
+          echo "::endgroup::"
+          echo "::group::Xcode"
+          (xcodebuild -version || true)
+          echo "::endgroup::"
+          echo "::group::Tools"
+          echo "xcodegen: $(command -v xcodegen || echo none)"
+          echo "pod:      $(command -v pod || echo none)"
+          echo "ruby:     $(command -v ruby || echo none)"
+          echo "::endgroup::"
 
-      - name: Install xcodegen
+      - name: Get XcodeGen
         run: |
-          if ! command -v xcodegen >/dev/null 2>&1; then
-            brew install xcodegen
+          set -euo pipefail
+          if command -v xcodegen >/dev/null 2>&1; then
+            echo "xcodegen already present"
+          else
+            echo "downloading xcodegen release binary"
+            curl -fL --retry 3 -o /tmp/xcodegen.zip \
+              https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip
+            unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+            ls -la /tmp/xcodegen
+            # release 包解出来通常是 xcodegen/bin/xcodegen 或 .build/release/xcodegen
+            BIN=$(find /tmp/xcodegen -type f -name xcodegen -perm -u+x | head -n 1)
+            echo "found: $BIN"
+            mkdir -p "$HOME/bin"
+            cp "$BIN" "$HOME/bin/xcodegen"
+            chmod +x "$HOME/bin/xcodegen"
+            echo "$HOME/bin" >> "$GITHUB_PATH"
           fi
           xcodegen --version
 
-      - name: Ensure CocoaPods
-        run: |
-          if ! command -v pod >/dev/null 2>&1; then
-            gem install cocoapods --no-document
-          fi
-          pod --version
-
-      - name: Generate project and install pods
+      - name: Generate project
         working-directory: POC
         run: |
+          set -euo pipefail
           xcodegen generate
-          pod install --repo-update
+          ls -la
+          test -f XiuxunPOC.xcodeproj/project.pbxproj && echo "project generated OK"
 
-      - name: Build (unsigned)
+      - name: Install pods
+        working-directory: POC
+        run: |
+          set -euo pipefail
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "installing cocoapods via gem"
+            sudo gem install cocoapods --no-document
+          fi
+          pod --version
+          pod install --repo-update 2>&1 | tee pod-install.log
+
+      - name: Build
         working-directory: POC
         run: |
           set -o pipefail
@@ -61,13 +85,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee /tmp/build.log
+            build 2>&1 | tee build.log
 
       - name: Package IPA
         working-directory: POC
         run: |
+          set -euo pipefail
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
           echo "APP=$APP"
+          test -n "$APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
           zip -r XiuxunPOC-unsigned.ipa Payload
@@ -80,10 +106,13 @@ jobs:
           path: POC/XiuxunPOC-unsigned.ipa
           retention-days: 14
 
-      - name: Upload build log on failure
-        if: failure()
+      - name: Upload logs (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: /tmp/build.log
+          name: build-logs
+          path: |
+            POC/build.log
+            POC/pod-install.log
+          if-no-files-found: ignore
           retention-days: 7
