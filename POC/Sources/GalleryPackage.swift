@@ -104,6 +104,14 @@ final class GalleryPackage {
         }
     }
 
+    /// 一次性拿到整个 recall.bin 的指针，供搜索阶段遍历（零拷贝、最快）
+    func withRecallPointer<T>(_ body: (UnsafePointer<Float>, Int) throws -> T) rethrows -> T {
+        try recall.withUnsafeBytes { raw in
+            let base = raw.baseAddress!.assumingMemoryBound(to: Float.self)
+            return try body(base, designs.count)
+        }
+    }
+
     func imageURL(for design: DesignRef) -> URL {
         root.appendingPathComponent("images").appendingPathComponent(design.image)
     }
