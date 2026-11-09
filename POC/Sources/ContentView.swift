@@ -31,6 +31,20 @@ struct ContentView: View {
                     .cornerRadius(10)
                 }
 
+                // 张量体检：推理前记录的元素数 / NaN / 极值，崩溃后仍可查看
+                if !runner.lastNote.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("上次张量体检").font(.caption2).foregroundColor(.secondary)
+                        Text(runner.lastNote)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(10)
+                }
+
                 Button {
                     runner.run()
                 } label: {

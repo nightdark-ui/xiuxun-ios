@@ -47,6 +47,7 @@ final class ProbeRunner: ObservableObject {
     @Published var loadMs: Double = .nan
     @Published var phase: ProbePhase = .idle
     @Published var lastCrashStep: String = ProbeTrace.last
+    @Published var lastNote: String = ProbeTrace.lastNote
 
     private static let size = 224
     private static let width = 384
@@ -61,6 +62,7 @@ final class ProbeRunner: ObservableObject {
         log = ""
         lastCrashStep = ""
         ProbeTrace.clear()
+        ProbeTrace.clearNote()
         ProbeTrace.mark(.start)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
@@ -161,31 +163,49 @@ final class ProbeRunner: ObservableObject {
         var featureCosine = 0.0
         var featureMaxDiff = 0.0
 
-        for _ in 0..<3 {
-            ProbeTrace.mark(.runModel)
-            let started = Date()
-            var flat = ours
-            let data = flat.withUnsafeBufferPointer { buffer -> Data in
-                Data(buffer: buffer)
-            }
-            flat.removeAll(keepingCapacity: false)
+        // 先把张量体检结果记下来（万一后面崩了，重开 App 能看到）
+        var nanCount = 0
+        var infCount = 0
+        var minValue = Double.greatestFiniteMagnitude
+        var maxValue = -Double.greatestFiniteMagnitude
+        for value in ours {
+            let d = Double(value)
+            if d.isNaN { nanCount += 1; continue }
+            if d.isInfinite { infCount += 1; continue }
+            minValue = Swift.min(minValue, d)
+            maxValue = Swift.max(maxValue, d)
+        }
+        ProbeTrace.note(
+            "元素 \(ours.count) 个；NaN \(nanCount)；Inf \(infCount)；" +
+            "min \(String(format: "%.4f", minValue))；max \(String(format: "%.4f", maxValue))" +
+            "；预期 150528 个"
+        )
 
+        for _ in 0..<3 {
+            ProbeTrace.mark(.buildTensor)
+            let started = Date()
             let shape: [NSNumber] = [
                 NSNumber(value: 1),
                 NSNumber(value: 3),
                 NSNumber(value: size),
                 NSNumber(value: size),
             ]
+            // 用 withUnsafeBytes + NSMutableData(bytes:) 明确拷贝一份
+            let tensorData: NSMutableData = ours.withUnsafeBytes { raw in
+                NSMutableData(bytes: raw.baseAddress!, length: raw.count)
+            }
             let tensor = try ORTValue(
-                tensorData: NSMutableData(data: data),
+                tensorData: tensorData,
                 elementType: .float,
                 shape: shape
             )
+            ProbeTrace.mark(.runSession)
             let outputs = try session.run(
                 withInputs: [cachedInputName: tensor],
                 outputNames: cachedOutputNames,
                 runOptions: nil
             )
+            ProbeTrace.mark(.readOutput)
             guard let firstOutput = outputs.values.first else { throw ProbeError.badOutput("模型没有输出") }
             let outputData = try firstOutput.tensorData() as Data
             let floatCount = outputData.count / 4

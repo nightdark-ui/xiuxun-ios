@@ -14,6 +14,9 @@ enum ProbeStep: String {
     case resize = "BICUBIC 缩放"
     case tensor = "归一化"
     case loadSession = "加载模型"
+    case buildTensor = "构造张量"
+    case runSession = "session.run"
+    case readOutput = "读取输出"
     case runModel = "模型推理"
     case done = "完成"
 }
@@ -32,6 +35,21 @@ enum ProbeTrace {
 
     static var last: String {
         UserDefaults.standard.string(forKey: key) ?? ""
+    }
+
+    private static let noteKey = "probe.note"
+
+    static func note(_ text: String) {
+        UserDefaults.standard.set(text, forKey: noteKey)
+        UserDefaults.standard.synchronize()
+    }
+
+    static var lastNote: String {
+        UserDefaults.standard.string(forKey: noteKey) ?? ""
+    }
+
+    static func clearNote() {
+        UserDefaults.standard.removeObject(forKey: noteKey)
     }
 }
 
