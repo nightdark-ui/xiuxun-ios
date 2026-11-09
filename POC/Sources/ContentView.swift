@@ -16,7 +16,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("成业绣 iOS 移植验证")
                         .font(.title2).bold()
-                    Text("构建 v9 · 后端对比")
+                    Text("构建 v10 · 后端对比")
                         .font(.caption2)
                         .foregroundColor(.blue)
                     Text(DeviceInfo.summary)
@@ -94,7 +94,7 @@ struct ContentView: View {
         switch mode {
         case .cpu1: return Color(red: 0.95, green: 0.40, blue: 0.13)
         case .cpu4: return Color(red: 0.90, green: 0.55, blue: 0.10)
-        case .xnnpack4: return Color(red: 0.20, green: 0.50, blue: 0.75)
+        case .xnnpackAll: return Color(red: 0.20, green: 0.50, blue: 0.75)
         case .coreML: return Color(red: 0.13, green: 0.55, blue: 0.35)
         case .coreMLANE: return Color(red: 0.35, green: 0.35, blue: 0.55)
         }
