@@ -91,7 +91,11 @@ final class ProbeRunner: ObservableObject {
     }
 
     /// 最保守的一次推理：新建 env + session，跑一次，取 CLS 前 384 维。
-    private static func inferOnce(modelPath: String, values: [Float]) throws -> [Double] {
+    private static func inferOnce(
+        modelPath: String,
+        values: [Float]
+    ) throws -> (cls: [Double], sessionMs: Double, runMs: Double) {
+        let sessionStarted = Date()
         let env = try ORTEnv(loggingLevel: .warning)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(1)
@@ -100,7 +104,9 @@ final class ProbeRunner: ObservableObject {
         let inputNames = try session.inputNames()
         guard let inputName = inputNames.first else { throw ProbeError.badOutput("模型没有输入") }
         let outputNames = Set(try session.outputNames())
+        let sessionMs = Date().timeIntervalSince(sessionStarted) * 1000
 
+        let runStarted = Date()
         let data = values.withUnsafeBufferPointer { Data(buffer: $0) }
         let shape: [NSNumber] = [
             NSNumber(value: 1),
@@ -131,7 +137,8 @@ final class ProbeRunner: ObservableObject {
             guard let base = raw.bindMemory(to: Float.self).baseAddress else { return }
             for i in 0..<width { cls[i] = Double(base[i]) }
         }
-        return cls
+        let runMs = Date().timeIntervalSince(runStarted) * 1000
+        return (cls, sessionMs, runMs)
     }
 
     private static func normalize(_ values: [Double]) -> [Double] {
@@ -223,20 +230,23 @@ final class ProbeRunner: ObservableObject {
 
         // ---------- B1. 参考张量（v1 已验证能跑通的那份数据）----------
         ProbeTrace.mark(.runReference)
-        let refCls = normalize(try inferOnce(modelPath: modelURL.path, values: reference))
+        let refRun = try inferOnce(modelPath: modelURL.path, values: reference)
+        let refCls = normalize(refRun.cls)
         let refResult = cosine(refCls, expected)
 
         // ---------- B2. 自算张量 ----------
         ProbeTrace.mark(.runOurs)
-        let ourCls = normalize(try inferOnce(modelPath: modelURL.path, values: ours))
+        let ourRun = try inferOnce(modelPath: modelURL.path, values: ours)
+        let ourCls = normalize(ourRun.cls)
         let featureResult = cosine(ourCls, expected)
 
         // ---------- C. 速度（再跑两次，含 session 创建）----------
-        var timings: [Double] = []
+        var sessionTimings: [Double] = [ourRun.sessionMs]
+        var runTimings: [Double] = [ourRun.runMs]
         for _ in 0..<2 {
-            let started = Date()
-            _ = try inferOnce(modelPath: modelURL.path, values: ours)
-            timings.append(Date().timeIntervalSince(started) * 1000)
+            let result = try inferOnce(modelPath: modelURL.path, values: ours)
+            sessionTimings.append(result.sessionMs)
+            runTimings.append(result.runMs)
         }
 
         ProbeTrace.mark(.done)
@@ -248,7 +258,8 @@ final class ProbeRunner: ObservableObject {
             ? "✅ 特征一致"
             : (featureResult.cosine >= 0.99 ? "⚠️ 特征接近" : "❌ 特征不一致")
 
-        let runs = timings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
+        let sessionText = sessionTimings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
+        let runText = runTimings.map { String(format: "%.0f", $0) }.joined(separator: " / ")
         let log = """
         【A. 图像链路】
           原图：\(prepared.gray.width)×\(prepared.gray.height)
@@ -263,8 +274,9 @@ final class ProbeRunner: ObservableObject {
           最大单项差：\(String(format: "%.8f", featureResult.maxDiff))
           \(featureVerdict)
 
-        【C. 速度】（含每次新建 session）
-          \(runs) ms
+        【C. 速度】
+          建 session：\(sessionText) ms
+          纯推理：\(runText) ms
         """
         return ProbeReport(
             tensorCosine: tensorCosine,
@@ -273,7 +285,7 @@ final class ProbeRunner: ObservableObject {
             refCosine: refResult.cosine,
             featureCosine: featureResult.cosine,
             featureMaxDiff: featureResult.maxDiff,
-            runMs: timings,
+            runMs: runTimings,
             log: log
         )
     }
