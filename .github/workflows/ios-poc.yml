@@ -126,6 +126,14 @@ jobs:
               echo "$f not found"
             fi
           done
+      - name: Publish release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create latest POC/XiuxunPOC-unsigned.ipa --title "latest build" --notes "commit $GITHUB_SHA"
+
       - name: Upload logs (always)
         if: always()
         uses: actions/upload-artifact@v4
