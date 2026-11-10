@@ -17,7 +17,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Xiuxun Probe
+        CFBundleDisplayName: 成业绣
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

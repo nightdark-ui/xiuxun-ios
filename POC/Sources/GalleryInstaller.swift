@@ -33,16 +33,33 @@ final class GalleryInstaller {
     private let live: URL
 
     init() {
-        let support = (try? FileManager.default.url(
-            for: .applicationSupportDirectory,
+        // 放在 Documents 下：文件 App → 我的 iPhone → 成业绣 → Gallery 可见，
+        // 可以手动拷进来，其他 App 也能选这个文件夹读取。
+        let documents = (try? FileManager.default.url(
+            for: .documentDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
-        root = support.appendingPathComponent("Xiuxun", isDirectory: true)
+        root = documents
         staging = root.appendingPathComponent("Gallery.staging", isDirectory: true)
         live = root.appendingPathComponent("Gallery", isDirectory: true)
-        try? fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+        try? fileManager.createDirectory(at: live, withIntermediateDirectories: true)
+
+        // 从旧位置（Application Support/Xiuxun/Gallery）迁移，避免重新导入
+        if !FileManager.default.fileExists(atPath: live.appendingPathComponent("index.json").path),
+           let support = try? FileManager.default.url(
+               for: .applicationSupportDirectory, in: .userDomainMask,
+               appropriateFor: nil, create: false
+           ) {
+            let legacy = support
+                .appendingPathComponent("Xiuxun", isDirectory: true)
+                .appendingPathComponent("Gallery", isDirectory: true)
+            if FileManager.default.fileExists(atPath: legacy.appendingPathComponent("index.json").path) {
+                try? FileManager.default.removeItem(at: live)
+                try? FileManager.default.moveItem(at: legacy, to: live)
+            }
+        }
     }
 
     var galleryURL: URL { live }
