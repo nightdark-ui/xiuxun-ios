@@ -79,6 +79,7 @@ final class QueryEncoder {
 
         var clsRows: [[Float]] = []
         var tileRows: [[Float]] = []
+        var patchRows: [[Float]] = []
 
         for variant in variants {
             // 10 个尺度一批
@@ -114,7 +115,8 @@ final class QueryEncoder {
             }
         }
 
-        let features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征", patchRows: patchRows)
+        var features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征")
+        features.patchRows = patchRows
         saveCache(key: key, features: features)
         return features
     }
