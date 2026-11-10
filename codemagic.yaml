@@ -1,0 +1,64 @@
+# Codemagic 备用构建配置（GitHub Actions 拿不到 macOS 机器时用）
+#
+# 用法：
+#   1. 注册 https://codemagic.io （免费 500 分钟/月 macOS）
+#   2. 连接 GitHub 仓库 nightdark-ui/xiuxun-ios
+#   3. Codemagic 会自动读取本文件
+#   4. 点 Start new build → 选 ios-poc workflow → 等结果 → 下载 artifact
+
+workflows:
+  ios-poc:
+    name: PicSeek iOS
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: 安装 XcodeGen
+        script: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: 下载 base 模型
+        script: |
+          DEST=POC/Resources/dinov2-base-fp16.onnx
+          if [ ! -f "$DEST" ]; then
+            curl -fL --retry 3 -o "$DEST" \
+              https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
+          fi
+          ls -lh "$DEST"
+
+      - name: 生成工程并装 pod
+        script: |
+          cd POC
+          xcodegen generate
+          pod install --repo-update
+
+      - name: 编译
+        script: |
+          cd POC
+          xcodebuild \
+            -workspace XiuxunPOC.xcworkspace \
+            -scheme XiuxunPOC \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打包 IPA
+        script: |
+          cd POC
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -r PicSeek-unsigned.ipa Payload
+          ls -lh PicSeek-unsigned.ipa
+
+    artifacts:
+      - POC/PicSeek-unsigned.ipa
