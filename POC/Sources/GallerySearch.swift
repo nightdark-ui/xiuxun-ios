@@ -1,3 +1,4 @@
+import UIKit
 import Foundation
 
 /// 一条搜索结果
@@ -117,38 +118,7 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            // ---------- 5. 深度复核：Vision + 结构 三路融合 ----------
-        var finalList = finalHits
-        if options.deepReview, let query = queryImage, finalList.count > 1 {
-            progress("深度复核…")
-            let visionQuery = ExtraScores.visionPrint(query)
-            let structureQuery = ExtraScores.structureSignature(query)
-            var enriched: [SearchHit] = []
-            enriched.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                var vision = 0.0
-                var structure = 0.0
-                if let candidate = candidateImage(hit.design) {
-                    if let a = visionQuery, let b = ExtraScores.visionPrint(candidate) {
-                        vision = max(0, ExtraScores.cosine(a, b))
-                    }
-                    if let a = structureQuery, let b = ExtraScores.structureSignature(candidate) {
-                        structure = max(0, ExtraScores.cosine(a, b))
-                    }
-                }
-                hit.visionScore = vision
-                hit.structureScore = structure
-                if vision > 0 || structure > 0 {
-                    // 0.6 DINO + 0.25 Vision + 0.15 结构
-                    hit.score = 0.6 * hit.score + 0.25 * vision + 0.15 * structure
-                }
-                enriched.append(hit)
-            }
-            finalList = enriched.sorted { $0.score > $1.score }
-            note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
-        }
-
-        timings.totalMs = Date().timeIntervalSince(started) * 1000
+            timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
@@ -202,6 +172,37 @@ final class GallerySearch {
                 tileScore: item.tile,
                 baseScore: baseScore
             )
+        }
+
+        // ---------- 5. 深度复核：Vision + 结构 三路融合 ----------
+        var finalList = finalHits
+        if options.deepReview, let query = queryImage, finalList.count > 1 {
+            progress("深度复核…")
+            let visionQuery = ExtraScores.visionPrint(query)
+            let structureQuery = ExtraScores.structureSignature(query)
+            var enriched: [SearchHit] = []
+            enriched.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                var vision = 0.0
+                var structure = 0.0
+                if let candidate = candidateImage(hit.design) {
+                    if let a = visionQuery, let b = ExtraScores.visionPrint(candidate) {
+                        vision = max(0, ExtraScores.cosine(a, b))
+                    }
+                    if let a = structureQuery, let b = ExtraScores.structureSignature(candidate) {
+                        structure = max(0, ExtraScores.cosine(a, b))
+                    }
+                }
+                hit.visionScore = vision
+                hit.structureScore = structure
+                if vision > 0 || structure > 0 {
+                    // 0.6 DINO + 0.25 Vision + 0.15 结构
+                    hit.score = 0.6 * hit.score + 0.25 * vision + 0.15 * structure
+                }
+                enriched.append(hit)
+            }
+            finalList = enriched.sorted { $0.score > $1.score }
+            note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
         }
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000

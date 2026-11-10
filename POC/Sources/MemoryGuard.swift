@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import SwiftUI
 
 /// 内存防护：长时间多次搜索后内存不会越用越多。
 ///
@@ -92,6 +93,11 @@ final class MemoryGuard {
 struct CachedThumb: View {
     let url: URL?
     var height: CGFloat = 120
+
+    init(url: URL?, height: CGFloat = 120) {
+        self.url = url
+        self.height = height
+    }
 
     @State private var image: UIImage?
 
