@@ -4,7 +4,7 @@ import Foundation
 /// 一条搜索结果
 struct SearchHit {
     let design: DesignRef
-    let score: Double
+    var score: Double
     let clsScore: Double
     let tileScore: Double
     let baseScore: Double
