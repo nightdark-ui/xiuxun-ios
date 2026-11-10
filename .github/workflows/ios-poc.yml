@@ -57,11 +57,8 @@ jobs:
 
       - name: Fetch base model
         run: |
-          set -euo pipefail
-          DEST=POC/Resources/dinov2-base-fp16.onnx
-          curl -fL --retry 3 --retry-all-errors -o  \
-            https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
-          ls -lh 
+          curl -fL --retry 3 -o POC/Resources/dinov2-base-fp16.onnx https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
+          ls -lh POC/Resources/dinov2-base-fp16.onnx
 
       - name: Generate project
         working-directory: POC
