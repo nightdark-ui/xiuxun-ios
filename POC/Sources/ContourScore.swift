@@ -34,7 +34,7 @@ enum ContourScore {
         } catch {
             return nil
         }
-        guard let observation = request.results?.first else { return nil }
+        guard let observation = request.results?.first as? VNContoursObservation else { return nil }
 
         var mask = [Float](repeating: 0, count: side * side)
         var totalLength = 0.0
