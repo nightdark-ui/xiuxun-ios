@@ -274,6 +274,26 @@ final class GallerySearch {
             note += note.isEmpty ? "已应用结构分" : "；已应用结构分"
         }
 
+        // 轮廓匹配（替代 SIFT，只在深度复核时执行）
+        if options.deepReview, let heavy = heavy, let queryImage = queryImage,
+           let contour = ContourScore.describe(queryImage) {
+            var rescored: [SearchHit] = []
+            rescored.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                guard let features = heavy.features(at: hit.design.heavyOffset) else {
+                    rescored.append(hit)
+                    continue
+                }
+                let contourScore = ContourScore.similarity(query: contour, designEdge: features.edge)
+                hit.structureScore = max(hit.structureScore, contourScore)
+                // 深度复核：0.60 AI + 0.25 Vision/轮廓 + 0.15 结构
+                hit.score = 0.60 * hit.score + 0.25 * contourScore + 0.15 * hit.structureScore
+                rescored.append(hit)
+            }
+            finalList = rescored.sorted { $0.score > $1.score }
+            note += note.isEmpty ? "已启用轮廓匹配" : "；已启用轮廓匹配"
+        }
+
         // 识别严格度过滤：精准=只留高分；宽松=全部保留
         let threshold: Double = options.strictness == 0 ? 0.72 : (options.strictness == 1 ? 0.50 : 0.0)
         if threshold > 0 {
