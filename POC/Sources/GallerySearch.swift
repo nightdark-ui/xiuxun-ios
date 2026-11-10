@@ -205,6 +205,24 @@ final class GallerySearch {
             note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
         }
 
+        // 参考学习加权（只对有样本的款生效）
+        if LearningStore.shared.uuidCount > 0 {
+            var boosted: [SearchHit] = []
+            boosted.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                let ref = LearningStore.shared.referenceScore(
+                    queryRows: query.clsRows,
+                    uuid: hit.design.featureUUID
+                )
+                if ref >= 0 {
+                    hit.score = 0.85 * hit.score + 0.15 * ref
+                }
+                boosted.append(hit)
+            }
+            finalList = boosted.sorted { $0.score > $1.score }
+            note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
+        }
+
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
         return SearchOutcome(hits: finalList, timings: timings, note: note)

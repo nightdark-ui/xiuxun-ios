@@ -90,6 +90,8 @@ struct SettingsView: View {
                 Text("结果")
             }
 
+            LearningSection()
+
             Section {
                 Text(DeviceInfo.summary).font(.caption2)
                 Text("线程数在「图库 → 性能诊断」里标定，保存后自动生效")
@@ -100,5 +102,78 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("设置")
+    }
+}
+
+
+/// 学习包：导入 / 导出 / 统计
+struct LearningSection: View {
+    @State private var importing = false
+    @State private var exporting = false
+    @State private var message = ""
+    @State private var exportURL: URL?
+
+    var body: some View {
+        Section {
+            HStack {
+                Text("学习样本")
+                Spacer()
+                Text("\(LearningStore.shared.totalSamples) 个 / \(LearningStore.shared.uuidCount) 款")
+                    .foregroundColor(.secondary)
+            }
+
+            Button("导入学习包（.zip）") { importing = true }
+            Button("导出学习包") { doExport() }
+                .disabled(LearningStore.shared.totalSamples == 0)
+            if !message.isEmpty {
+                Text(message).font(.caption).foregroundColor(.secondary)
+            }
+        } header: {
+            Text("参考学习")
+        } footer: {
+            Text("导入后，命中的款会按 85% AI 分 + 15% 学习分重排；没有样本的款不受影响。")
+                .font(.caption2)
+        }
+        .fileImporter(
+            isPresented: $importing,
+            allowedContentTypes: [.zip, .data],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let gained = url.startAccessingSecurityScopedResource()
+                defer { if gained { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    let outcome = try LearningStore.shared.importPack(from: url)
+                    message = outcome.message
+                } catch {
+                    message = "导入失败：\(error.localizedDescription)"
+                }
+            case .failure(let error):
+                message = "选择文件失败：\(error.localizedDescription)"
+            }
+        }
+        .sheet(isPresented: $exporting) {
+            if let url = exportURL {
+                ShareSheet(items: [url])
+            }
+        }
+    }
+
+    private func doExport() {
+        let documents = (try? FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+        )) ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        let url = documents.appendingPathComponent("PicSeek-Learning.zip")
+        do {
+            let count = try LearningStore.shared.exportPack(to: url)
+            exportURL = url
+            exporting = true
+            message = "已导出 \(count) 个样本"
+        } catch {
+            message = "导出失败：\(error.localizedDescription)"
+        }
     }
 }
