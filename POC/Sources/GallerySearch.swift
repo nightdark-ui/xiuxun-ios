@@ -143,26 +143,32 @@ final class GallerySearch {
 
         if shouldCancel() { throw InstallError.cancelled }
 
-        // ---------- 2.5 dense 局部匹配（PC 的 ai_component 里占 80%） ----------
-        var denseScores: [Int: Double] = [:]
-        if let heavy = heavy, !query.patchRows.isEmpty {
+        // ---------- 2.5 dense 局部匹配 + ai_combined（严格按 PC 公式） ----------
+        var aiScores: [Int: Double] = [:]
+        do {
             progress("局部匹配…")
             let denseStart = Date()
             let topForDense = Array(ranked.prefix(40))
-            for item in topForDense {
-                let design = package.designs[item.index]
-                guard let features = heavy.features(at: design.heavyOffset) else { continue }
-                denseScores[item.index] = DenseMatch.similarity(
-                    queryPatches: query.patchRows,
-                    designTiles: features.tiles5
-                )
+            var denseMap: [Int: Double] = [:]
+            if let heavy = heavy, !query.patchRows.isEmpty {
+                for item in topForDense {
+                    let design = package.designs[item.index]
+                    guard let features = heavy.features(at: design.heavyOffset) else { continue }
+                    denseMap[item.index] = DenseMatch.similarity(
+                        queryPatches: query.patchRows,
+                        designTiles: features.tiles5
+                    )
+                }
             }
-            // 用 PC 的结构重排：ai = 0.25 × (cls+tile) + 0.75 × dense
-            ranked.sort { left, right in
-                let a = Self.blend(left.cls, left.tile, denseScores[left.index])
-                let b = Self.blend(right.cls, right.tile, denseScores[right.index])
-                return a > b
+            // PC: base_score = 0.20*cls + 0.80*dense（没有 dense 时取 cls）
+            //     ai_combined = 0.65*base_score + 0.35*tile
+            for item in ranked {
+                let baseScore = denseMap[item.index].map {
+                    0.20 * item.cls + 0.80 * $0
+                } ?? item.cls
+                aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile
             }
+            ranked.sort { (aiScores[$0.index] ?? 0) > (aiScores[$1.index] ?? 0) }
             _ = denseStart
         }
 
@@ -184,16 +190,22 @@ final class GallerySearch {
                 }
             }
             timings.baseMs = Date().timeIntervalSince(baseStart) * 1000
+            // PC: ai_combined = max(ai_combined, 0.92 * base_cls)
+            for (index, value) in baseScores where value > 0 {
+                let boosted = 0.92 * value
+                if boosted > (aiScores[index] ?? 0) {
+                    aiScores[index] = boosted
+                }
+            }
         }
 
         // ---------- 4. 组装结果 ----------
         let finalHits: [SearchHit] = ranked.prefix(max(1, options.resultCount)).map { item in
-            let ai = Self.blend(item.cls, item.tile, denseScores[item.index])
+            let ai = aiScores[item.index] ?? Self.combined(item.cls, item.tile)
             let baseScore = baseScores[item.index] ?? 0
-            let score = baseScores[item.index] == nil ? ai : ai * 0.7 + baseScore * 0.3
             return SearchHit(
                 design: package.designs[item.index],
-                score: score,
+                score: ai,
                 clsScore: item.cls,
                 tileScore: item.tile,
                 baseScore: baseScore,
@@ -293,7 +305,7 @@ final class GallerySearch {
                 }
                 let structure = normalized(raw)
                 hit.structureScore = structure
-                hit.score = 0.75 * hit.score + 0.25 * structure
+                hit.score = 0.75 * (hit.aiScore) + 0.25 * structure
                 rescored.append(hit)
             }
             finalList = rescored.sorted { $0.score > $1.score }
