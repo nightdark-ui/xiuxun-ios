@@ -21,6 +21,8 @@ struct SearchOptions {
     var baseInputSize = 224
     var sensitivity = 1.0
     var selectedLibraries: Set<String> = []
+    var codeFrom: String = ""
+    var codeTo: String = ""
 }
 
 /// 查询编码器：CLS（10 尺度）+ tile（3×3），带磁盘缓存

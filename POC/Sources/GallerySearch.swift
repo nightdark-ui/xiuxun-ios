@@ -77,11 +77,20 @@ final class GallerySearch {
         var candidates: [(index: Int, cls: Double, tile: Double)] = []
         candidates.reserveCapacity(package.count)
 
+        let fromNumber = Self.codeNumber(options.codeFrom)
+        let toNumber = Self.codeNumber(options.codeTo)
+        let useCodeRange = fromNumber != nil || toNumber != nil
+
         package.withRecallPointer { base, count in
             for index in 0..<count {
                 if shouldCancel() { return }
                 let design = package.designs[index]
                 if useLibraryFilter && !allowedLibraries.contains(design.library) { continue }
+                if useCodeRange {
+                    guard let number = Self.codeNumber(design.code) else { continue }
+                    if let low = fromNumber, number < low { continue }
+                    if let high = toNumber, number > high { continue }
+                }
                 let record = base.advanced(by: index * GalleryPackage.recallFloats)
                 let clsScore = Self.bestCosine(
                     queryRows: query.clsRows,
@@ -163,6 +172,13 @@ final class GallerySearch {
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
         return SearchOutcome(hits: finalHits, timings: timings, note: note)
+    }
+
+    /// 从编号里取出数字部分（SL9015 → 9015）
+    static func codeNumber(_ code: String) -> Int? {
+        let digits = code.compactMap { $0.isNumber ? $0 : nil }
+        guard !digits.isEmpty else { return nil }
+        return Int(String(digits))
     }
 
     // MARK: - 数学

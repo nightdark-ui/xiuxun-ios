@@ -18,6 +18,15 @@ final class AppSettings: ObservableObject {
     @Published var base336: Bool {
         didSet { UserDefaults.standard.set(base336, forKey: "set.base336") }
     }
+    @Published var libraryFilter: Set<String> {
+        didSet { UserDefaults.standard.set(Array(libraryFilter), forKey: "set.libraryFilter") }
+    }
+    @Published var codeFrom: String {
+        didSet { UserDefaults.standard.set(codeFrom, forKey: "set.codeFrom") }
+    }
+    @Published var codeTo: String {
+        didSet { UserDefaults.standard.set(codeTo, forKey: "set.codeTo") }
+    }
     @Published var resultCount: Int {
         didSet { UserDefaults.standard.set(resultCount, forKey: "set.resultCount") }
     }
@@ -28,6 +37,9 @@ final class AppSettings: ObservableObject {
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
         base336 = defaults.bool(forKey: "set.base336")
+        libraryFilter = Set(defaults.stringArray(forKey: "set.libraryFilter") ?? [])
+        codeFrom = defaults.string(forKey: "set.codeFrom") ?? ""
+        codeTo = defaults.string(forKey: "set.codeTo") ?? ""
         let count = defaults.integer(forKey: "set.resultCount")
         resultCount = count > 0 ? count : 30
     }
@@ -40,6 +52,9 @@ final class AppSettings: ObservableObject {
         options.deepReview = deepReview
         options.resultCount = resultCount
         options.baseInputSize = base336 ? 336 : 224
+        options.selectedLibraries = libraryFilter
+        options.codeFrom = codeFrom.trimmingCharacters(in: .whitespaces)
+        options.codeTo = codeTo.trimmingCharacters(in: .whitespaces)
         return options
     }
 }
