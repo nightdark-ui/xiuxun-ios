@@ -17,7 +17,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Xiuxun Probe
+        CFBundleDisplayName: PicSeek
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
