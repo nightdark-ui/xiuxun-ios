@@ -24,6 +24,8 @@ struct SearchOptions {
     var sensitivity = 1.0
     var selectedLibraries: Set<String> = []
     var autoCrop: Bool = true
+    /// 循环花型增强（实验，默认关）
+    var allowRepeat: Bool = false
     var localFirst: Bool = false
     /// 0 精准 / 1 均衡 / 2 宽松
     var strictness: Int = 1
@@ -85,6 +87,11 @@ final class QueryEncoder {
                 variants.append(("mir\(angle)", ImageOps.rotate(mirrored, degrees: angle)))
             }
         }
+        // 循环花型增强：追加若干"重复单元"变体（只提供 CLS）
+        var repeatVariants: [PilImaging.GrayImage] = []
+        if options.allowRepeat {
+            repeatVariants = RepeatVariants.variants(base)
+        }
 
         var clsRows: [[Float]] = []
         var tileRows: [[Float]] = []
@@ -119,6 +126,19 @@ final class QueryEncoder {
                 for item in tileEncoded {
                     if let first = item.first {
                         tileRows.append(normalize(first.cls))
+                    }
+                }
+            }
+        }
+
+        for variant in repeatVariants {
+            let tensors = DinoEncoder.queryFractions.map {
+                ImageOps.prepareTensor(variant, fraction: $0, size: 224)
+            }
+            if let encoded = try? small.encode(batch: tensors) {
+                for item in encoded {
+                    if let first = item.first {
+                        clsRows.append(normalize(first.cls))
                     }
                 }
             }

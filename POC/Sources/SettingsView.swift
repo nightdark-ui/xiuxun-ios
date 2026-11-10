@@ -18,6 +18,9 @@ final class AppSettings: ObservableObject {
     @Published var base336: Bool {
         didSet { UserDefaults.standard.set(base336, forKey: "set.base336") }
     }
+    @Published var allowRepeat: Bool {
+        didSet { UserDefaults.standard.set(allowRepeat, forKey: "set.allowRepeat") }
+    }
     @Published var autoCrop: Bool {
         didSet { UserDefaults.standard.set(autoCrop, forKey: "set.autoCrop") }
     }
@@ -46,6 +49,7 @@ final class AppSettings: ObservableObject {
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
         base336 = defaults.bool(forKey: "set.base336")
+        allowRepeat = defaults.bool(forKey: "set.allowRepeat")
         autoCrop = defaults.object(forKey: "set.autoCrop") as? Bool ?? true
         localFirst = defaults.bool(forKey: "set.localFirst")
         strictness = defaults.object(forKey: "set.strictness") as? Int ?? 1
@@ -65,6 +69,7 @@ final class AppSettings: ObservableObject {
         options.resultCount = resultCount
         options.baseInputSize = base336 ? 336 : 224
         options.selectedLibraries = libraryFilter
+        options.allowRepeat = allowRepeat
         options.autoCrop = autoCrop
         options.localFirst = localFirst
         options.strictness = strictness
@@ -82,6 +87,7 @@ struct SettingsView: View {
             Section {
                 Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
                 Toggle("自动裁切主体", isOn: $settings.autoCrop)
+                Toggle("循环花型增强（实验，较慢）", isOn: $settings.allowRepeat)
                 Toggle("局部来图优先", isOn: $settings.localFirst)
                 Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
                 Toggle("镜像搜索（更慢，默认关）", isOn: $settings.mirrorEnabled)
