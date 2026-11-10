@@ -79,7 +79,7 @@ final class GalleryUpdater {
         guard let base = URL(string: serverBase.trimmingCharacters(in: .whitespacesAndNewlines)) else {
             throw UpdateError.badIndex
         }
-        let indexData = try Http.get(base.appendingPathComponent("index.json"))
+        let indexData = try Http.get(base.appendingPathComponent("files").appendingPathComponent("index.json"))
         guard let json = try JSONSerialization.jsonObject(with: indexData) as? [String: Any],
               let rawDesigns = json["designs"] as? [[String: Any]] else {
             throw UpdateError.badIndex
