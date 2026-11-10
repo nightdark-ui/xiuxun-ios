@@ -119,9 +119,11 @@ final class QueryEncoder {
                 }
             }
 
-            // 9 块 tile 一批
-            let tileTensors = ImageOps.prepareTiles(variant.image, size: 224)
-            if !tileTensors.isEmpty {
+            // 多尺度 tile：1.0 与 0.7 两个尺度各 9 块，取更多候选特征
+            for tileFraction in [1.0, 0.7] {
+                let scaled = PilImaging.centerCrop(variant.image, fraction: tileFraction)
+                let tileTensors = ImageOps.prepareTiles(scaled, size: 224)
+                if tileTensors.isEmpty { continue }
                 let tileEncoded = try small.encode(batch: tileTensors)
                 for item in tileEncoded {
                     if let first = item.first {
@@ -151,8 +153,11 @@ final class QueryEncoder {
     }
 
     /// 给候选设计图算 patch token（PC 的 dense 就是实时算这个）
-    func designPatches(_ image: PilImaging.GrayImage) throws -> [[Float]] {
-        let tensor = ImageOps.prepareTensor(image, fraction: 1.0, size: 224)
+    func designPatches(
+        _ image: PilImaging.GrayImage,
+        fraction: Double = 1.0
+    ) throws -> [[Float]] {
+        let tensor = ImageOps.prepareTensor(image, fraction: fraction, size: 224)
         let encoded = try small.encodeOne(tensor)
         var rows: [[Float]] = []
         let rowCount = encoded.patches.count / 384

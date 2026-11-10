@@ -82,7 +82,7 @@ final class GallerySearch {
         let allowedLibraries = options.selectedLibraries
         let useLibraryFilter = !allowedLibraries.isEmpty
 
-        var candidates: [(index: Int, cls: Double, tile: Double)] = []
+        var candidates: [(index: Int, cls: Double, tile: Double, fraction: Double)] = []
         candidates.reserveCapacity(package.count)
 
         let fromNumber = Self.codeNumber(options.codeFrom)
@@ -100,17 +100,22 @@ final class GallerySearch {
                     if let high = toNumber, number > high { continue }
                 }
                 let record = base.advanced(by: index * GalleryPackage.recallFloats)
-                let clsScore = Self.bestCosine(
+                let clsResult = Self.bestCosineWithRow(
                     queryRows: query.clsRows,
                     target: record,
                     rows: GalleryPackage.clsRows
                 )
+                let clsScore = clsResult.score
+                // 设计侧 5 行对应 5 个尺度，记下命中的那个用于 dense
+                let designFraction = DinoEncoder.designFractions[
+                    min(clsResult.row, DinoEncoder.designFractions.count - 1)
+                ]
                 let tileScore = query.tileRows.isEmpty ? 0 : Self.bestCosine(
                     queryRows: query.tileRows,
                     target: record.advanced(by: GalleryPackage.clsRows * Self.dim),
                     rows: GalleryPackage.tileRows
                 )
-                candidates.append((index, clsScore, tileScore))
+                candidates.append((index, clsScore, tileScore, designFraction))
                 timings.compared = candidates.count
             }
         }
@@ -158,7 +163,10 @@ final class GallerySearch {
                         guard let enhanced = try? ImageOps.loadEnhancedGray(
                             from: package.imageURL(for: design)
                         ) else { return }
-                        guard let rows = try? encoder.designPatches(enhanced), !rows.isEmpty else {
+                        guard let rows = try? encoder.designPatches(
+                            enhanced,
+                            fraction: item.fraction
+                        ), !rows.isEmpty else {
                             return
                         }
                         var flat = [Float]()
@@ -324,7 +332,7 @@ final class GallerySearch {
                 let contourScore = ContourScore.similarity(query: contour, designEdge: features.edge)
                 hit.structureScore = max(hit.structureScore, contourScore)
                 // 深度复核：0.60 AI + 0.25 Vision/轮廓 + 0.15 结构
-                hit.score = 0.60 * hit.score + 0.25 * contourScore + 0.15 * hit.structureScore
+                hit.score = 0.45 * hit.score + 0.40 * contourScore + 0.15 * hit.structureScore
                 rescored.append(hit)
             }
             finalList = rescored.sorted { $0.score > $1.score }
