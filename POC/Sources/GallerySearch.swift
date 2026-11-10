@@ -150,14 +150,25 @@ final class GallerySearch {
             let denseStart = Date()
             let topForDense = Array(ranked.prefix(40))
             var denseMap: [Int: Double] = [:]
-            if let heavy = heavy, !query.patchRows.isEmpty {
+            if !query.patchRows.isEmpty {
+                // PC 的做法：对每个候选实时解码原图、算 patch，再和查询 patch 比对
                 for item in topForDense {
                     let design = package.designs[item.index]
-                    guard let features = heavy.features(at: design.heavyOffset) else { continue }
-                    denseMap[item.index] = DenseMatch.similarity(
-                        queryPatches: query.patchRows,
-                        designTiles: features.tiles5
-                    )
+                    autoreleasepool {
+                        guard let enhanced = try? ImageOps.loadEnhancedGray(
+                            from: package.imageURL(for: design)
+                        ) else { return }
+                        guard let rows = try? encoder.designPatches(enhanced), !rows.isEmpty else {
+                            return
+                        }
+                        var flat = [Float]()
+                        flat.reserveCapacity(rows.count * 384)
+                        for row in rows { flat.append(contentsOf: row) }
+                        denseMap[item.index] = DenseMatch.similarity(
+                            queryPatches: query.patchRows,
+                            designTiles: flat
+                        )
+                    }
                 }
             }
             // PC: base_score = 0.20*cls + 0.80*dense（没有 dense 时取 cls）
@@ -280,21 +291,8 @@ final class GallerySearch {
                     designStats: features.stats
                 )
             }
-            // 按名次归一化：同类花型的结构分都在 0.99 以上，min-max 会被压缩，
-            // 用名次（rank）保证永远有区分度。
-            let sortedValues = raws.values.sorted()
-            func normalized(_ raw: Double) -> Double {
-                guard sortedValues.count > 1 else { return 0.5 }
-                // 找到 raw 在排序数组中的位置（并列取平均位次）
-                var lower = 0
-                var upper = 0
-                for value in sortedValues {
-                    if value < raw - 1e-9 { lower += 1 }
-                    if value <= raw + 1e-9 { upper += 1 }
-                }
-                let rank = (Double(lower) + Double(max(lower, upper - 1))) / 2.0
-                return rank / Double(sortedValues.count - 1)
-            }
+            // 与 PC 一致：直接用绝对结构分（0…1），不做名次归一化
+            func normalized(_ raw: Double) -> Double { raw }
 
             var rescored: [SearchHit] = []
             rescored.reserveCapacity(finalList.count)

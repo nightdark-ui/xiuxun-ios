@@ -97,9 +97,8 @@ enum DenseMatch {
     /// - Returns: 0…1，`0.70 × max_mean + 0.30 × mutual_mean`
     static func similarity(queryPatches: [[Float]], designTiles: [Float]) -> Double {
         let queryCount = queryPatches.count
-        let designCount = DesignTileRows
-        guard queryCount > 0, designTiles.count >= designCount * 384 else { return 0 }
-        _ = designCount
+        let designCount = designTiles.count / 384
+        guard queryCount > 0, designCount > 0 else { return 0 }
 
         // bestDesign[i] = argmax_j cosine(q_i, d_j)，bestValues[i] = 该最大相似度
         var bestDesign = [Int](repeating: 0, count: queryCount)

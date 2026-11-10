@@ -150,6 +150,20 @@ final class QueryEncoder {
         return features
     }
 
+    /// 给候选设计图算 patch token（PC 的 dense 就是实时算这个）
+    func designPatches(_ image: PilImaging.GrayImage) throws -> [[Float]] {
+        let tensor = ImageOps.prepareTensor(image, fraction: 1.0, size: 224)
+        let encoded = try small.encodeOne(tensor)
+        var rows: [[Float]] = []
+        let rowCount = encoded.patches.count / 384
+        rows.reserveCapacity(rowCount)
+        for r in 0..<rowCount {
+            let start = r * 384
+            rows.append(normalize(Array(encoded.patches[start..<(start + 384)])))
+        }
+        return rows
+    }
+
     /// base 重排用的查询向量（768 维）。size 决定 224（普通）还是 336（深度复核）。
     func encodeBase(
         enhancedGray image: PilImaging.GrayImage,
