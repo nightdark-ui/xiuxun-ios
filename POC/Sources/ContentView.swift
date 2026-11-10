@@ -82,44 +82,15 @@ struct ContentView: View {
                         Text("\(item.count)").font(.caption).foregroundColor(.secondary)
                     }
                 }
-                Text(app.galleryPath)
-                    .font(.system(size: 10, design: .monospaced))
+
+                Divider()
+
+                Text("图库位置（可在「文件」App 里直接替换）")
+                    .font(.caption2)
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
-                HStack(spacing: 10) {
-                    Button {
-                        app.checkUpdate()
-                    } label: {
-                        Text("检查更新").font(.footnote).bold()
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(Color(red: 0.20, green: 0.50, blue: 0.75))
-                            .foregroundColor(.white).cornerRadius(14)
-                    }
-                    .disabled(app.updating)
-
-                    if app.updateReady {
-                        Button {
-                            app.applyUpdate()
-                        } label: {
-                            Text("立即更新").font(.footnote).bold()
-                                .padding(.horizontal, 14).padding(.vertical, 8)
-                                .background(Color(red: 0.95, green: 0.40, blue: 0.13))
-                                .foregroundColor(.white).cornerRadius(14)
-                        }
-                        .disabled(app.updating)
-                    }
-                    Spacer()
-                }
-
-                if !app.updateSummary.isEmpty {
-                    Text(app.updateSummary).font(.caption).foregroundColor(.secondary)
-                }
-
-                if app.updating {
-                    ProgressView(value: app.progress.fraction)
-                    Text("\(app.progress.phase)  \(app.progress.text)")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
+                Text("我的 iPhone / PicSeek / Gallery")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.blue)
 
                 Button(role: .destructive) {
                     app.clearGallery()
@@ -127,40 +98,31 @@ struct ContentView: View {
                     Text("删除图库").font(.footnote)
                 }
             } else {
-                TextField("http://192.168.1.5:8765", text: $app.serverAddress)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.URL)
-                    .autocapitalization(.none)
-                    .disabled(app.installing)
-
-                Text("电脑上运行 serve_gallery.py，把地址填到上面，然后点开始导入。约 4.1GB，需要 5–10 分钟。")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-
-                if app.installing {
-                    ProgressView(value: app.progress.fraction)
-                    Text("\(app.progress.phase)  \(app.progress.text)")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("还没有图库").font(.subheadline).bold()
+                    Text("把图库文件夹（含 index.json、recall.bin、heavy.bin、images、thumbs、models）拷到：")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Text("我的 iPhone / PicSeek / Gallery")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.blue)
+                    Text("用 iTunes 文件共享、iCloud 或「文件」App 都可以。拷完回到这里会自动识别。")
                         .font(.caption2)
                         .foregroundColor(.secondary)
-                    Button(role: .destructive) {
-                        app.cancelInstall()
-                    } label: {
-                        Text("取消").font(.footnote)
+                }
+
+                Button {
+                    app.loadGallery()
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("重新检测图库").bold()
+                        Spacer()
                     }
-                } else {
-                    Button {
-                        app.startInstall()
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("开始导入").bold()
-                            Spacer()
-                        }
-                        .padding(.vertical, 12)
-                        .background(Color(red: 0.95, green: 0.40, blue: 0.13))
-                        .foregroundColor(.white)
-                        .cornerRadius(20)
-                    }
+                    .padding(.vertical, 12)
+                    .background(Color(red: 0.95, green: 0.40, blue: 0.13))
+                    .foregroundColor(.white)
+                    .cornerRadius(20)
                 }
             }
 
