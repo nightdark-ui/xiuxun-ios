@@ -102,15 +102,15 @@ struct CachedThumb: View {
     @State private var image: UIImage?
 
     var body: some View {
-        Group {
+        ZStack {
+            UI.pageBackground
             if let image = image {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                UI.pageBackground
+                    .scaledToFill()
             }
         }
+        .frame(maxWidth: .infinity)
         .frame(height: height)
         .clipped()
         .task(id: url) {
