@@ -109,7 +109,7 @@ jobs:
           test -n "$APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          NAME="ChengYeXiu-v1.0.${GITHUB_RUN_NUMBER}-unsigned.ipa"
+          NAME="PicSeek-v1.0.${GITHUB_RUN_NUMBER}-unsigned.ipa"
           zip -r "$NAME" Payload
           ls -lh "$NAME"
           echo "IPA_NAME=$NAME" >> "$GITHUB_ENV"
@@ -117,8 +117,8 @@ jobs:
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ChengYeXiu-v1.0.${{ github.run_number }}-ipa
-          path: POC/ChengYeXiu-v1.0.*.ipa
+          name: PicSeek-v1.0.${{ github.run_number }}-ipa
+          path: POC/PicSeek-v1.0.*.ipa
           retention-days: 14
 
       - name: Dump logs
@@ -139,7 +139,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest POC/ChengYeXiu-v1.0.*.ipa --title "v1.0.$GITHUB_RUN_NUMBER" --notes "commit $GITHUB_SHA"
+          gh release create latest POC/PicSeek-v1.0.*.ipa --title "v1.0.$GITHUB_RUN_NUMBER" --notes "commit $GITHUB_SHA"
+          cp POC/PicSeek-v1.0.*.ipa /tmp/PicSeek-latest-unsigned.ipa
+          gh release upload latest /tmp/PicSeek-latest-unsigned.ipa --clobber
 
       - name: Upload logs (always)
         if: always()

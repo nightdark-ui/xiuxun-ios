@@ -33,7 +33,7 @@ final class GalleryInstaller {
     private let live: URL
 
     init() {
-        // 放在 Documents 下：文件 App → 我的 iPhone → 成业绣 → Gallery 可见，
+        // 放在 Documents 下：文件 App → 我的 iPhone → PicSeek → Gallery 可见，
         // 可以手动拷进来，其他 App 也能选这个文件夹读取。
         let documents = (try? FileManager.default.url(
             for: .documentDirectory,

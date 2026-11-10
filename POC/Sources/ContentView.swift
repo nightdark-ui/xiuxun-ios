@@ -51,7 +51,7 @@ struct ContentView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("成业绣 AI 搜图")
+            Text("PicSeek")
                 .font(.title).bold()
             Text("构建 v1.0 · 图库导入")
                 .font(.caption2)
