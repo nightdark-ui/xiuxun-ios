@@ -20,6 +20,7 @@ enum StructureScore {
 
     struct QueryDescriptor {
         var edge: [Float]      // 80×80，已归一化
+        var fm: [Float]        // Fourier-Mellin 256 维
         var hu: [Float]        // 7
         var stats: [Float]     // 4
     }
@@ -28,7 +29,8 @@ enum StructureScore {
         let edge = edgeMap(image)
         let hu = huMoments(edge, side: edgeSide)
         let stats = simpleStats(image)
-        return QueryDescriptor(edge: edge, hu: hu, stats: stats)
+        let fm = FourierMellin.descriptor(edge: edge, side: edgeSide)
+        return QueryDescriptor(edge: edge, fm: fm, hu: hu, stats: stats)
     }
 
     /// 80×80 梯度幅值图（归一化到 0…1）
@@ -174,6 +176,15 @@ enum StructureScore {
         return max(0, dot / (sqrt(na) * sqrt(nb)))
     }
 
+    /// Fourier-Mellin 相似度（两者都已归一化，直接点积）
+    static func fmSimilarity(_ a: [Float], _ b: [Float]) -> Double {
+        let count = min(a.count, b.count)
+        guard count > 0 else { return 0 }
+        var dot = 0.0
+        for i in 0..<count { dot += Double(a[i]) * Double(b[i]) }
+        return dot
+    }
+
     /// Hu 矩相似度：exp(-4 × 平均绝对差)（PC 同公式）
     static func huSimilarity(_ a: [Float], _ b: [Float]) -> Double {
         let count = min(a.count, b.count)
@@ -197,15 +208,16 @@ enum StructureScore {
     static func structure(
         query: QueryDescriptor,
         designEdge: [Float],
+        designFm: [Float],
         designHu: [Float],
         designStats: [Float]
     ) -> Double {
         let edge = edgeCorrelation(query.edge, designEdge)
         let hu = huSimilarity(query.hu, designHu)
         let stats = statsSimilarity(query.stats, designStats)
-        // PC: shape = 0.72 fm + 0.12 hu + 0.16 stats；这里没有 fm，
-        // 用 hu/stats 按 0.12+0.16 的比例归一化
-        let shape = (0.12 * hu + 0.16 * stats) / 0.28
+        // PC: shape = 0.72×fm + 0.12×hu + 0.16×stats
+        let fm = max(0, fmSimilarity(query.fm, designFm))
+        let shape = 0.72 * fm + 0.12 * hu + 0.16 * stats
         return min(1.0, max(0.0, 0.62 * edge + 0.38 * shape))
     }
 }

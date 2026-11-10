@@ -262,6 +262,7 @@ final class GallerySearch {
                 let structure = StructureScore.structure(
                     query: queryDescriptor,
                     designEdge: features.edge,
+                    designFm: features.fm,
                     designHu: features.hu,
                     designStats: features.stats
                 )
