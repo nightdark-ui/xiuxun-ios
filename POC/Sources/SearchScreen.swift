@@ -105,7 +105,13 @@ final class SearchModel: ObservableObject {
                     options: self.options,
                     encoder: encoder,
                     progress: { text in self.update(text) },
-                    shouldCancel: { self.cancelRequested }
+                    shouldCancel: { self.cancelRequested },
+                    queryImage: image,
+                    candidateImage: { design in
+                        let url = package.thumbURL(for: design)
+                        guard let data = try? Data(contentsOf: url) else { return nil }
+                        return UIImage(data: data)
+                    }
                 )
 
                 DispatchQueue.main.async {
