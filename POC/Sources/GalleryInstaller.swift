@@ -88,11 +88,13 @@ final class GalleryInstaller {
             if isCancelled() { throw InstallError.cancelled }
 
             let remote = base.appendingPathComponent("files").appendingPathComponent(file.path)
-            let data = try download(remote)
-            guard Int64(data.count) == file.size else {
+            // 关键：大文件（heavy.bin 2.2GB）必须流式落盘，不能读进内存
+            try downloadFile(remote, to: target)
+            let written = (try? fileManager.attributesOfItem(atPath: target.path)[.size] as? NSNumber)?.int64Value ?? 0
+            guard written == file.size else {
+                try? fileManager.removeItem(at: target)
                 throw InstallError.sizeMismatch(file.path)
             }
-            try data.write(to: target, options: .atomic)
 
             state.filesDone += 1
             state.bytesDone += file.size
@@ -166,6 +168,39 @@ final class GalleryInstaller {
         }
         guard !files.isEmpty else { throw InstallError.badManifest }
         return Manifest(files: files, totalSize: total)
+    }
+
+    /// 流式下载到指定文件（内存占用恒定，适合 GB 级文件）
+    private func downloadFile(_ url: URL, to destination: URL) throws {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 120
+        var outcome: Result<URL, Error>?
+        let semaphore = DispatchSemaphore(value: 0)
+        let task = URLSession.shared.downloadTask(with: request) { location, response, error in
+            defer { semaphore.signal() }
+            if let error = error {
+                outcome = .failure(error)
+                return
+            }
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let location = location else {
+                outcome = .failure(InstallError.http((response as? HTTPURLResponse)?.statusCode ?? -1))
+                return
+            }
+            outcome = .success(location)
+        }
+        task.resume()
+        semaphore.wait()
+
+        switch outcome {
+        case .success(let temporary):
+            try? fileManager.removeItem(at: destination)
+            try fileManager.moveItem(at: temporary, to: destination)
+        case .failure(let error):
+            throw error
+        case .none:
+            throw InstallError.http(-1)
+        }
     }
 
     private func download(_ url: URL) throws -> Data {
