@@ -266,14 +266,20 @@ final class GallerySearch {
                     designStats: features.stats
                 )
             }
-            // 候选内归一化：边缘相关在同类纹理上普遍接近 1，直接用会失去区分度
-            let values = Array(raws.values)
-            let minValue = values.min() ?? 0
-            let maxValue = values.max() ?? 0
-            let span = maxValue - minValue
+            // 按名次归一化：同类花型的结构分都在 0.99 以上，min-max 会被压缩，
+            // 用名次（rank）保证永远有区分度。
+            let sortedValues = raws.values.sorted()
             func normalized(_ raw: Double) -> Double {
-                guard span > 0.02 else { return raw }   // 差异太小就保留原值
-                return (raw - minValue) / span
+                guard sortedValues.count > 1 else { return 0.5 }
+                // 找到 raw 在排序数组中的位置（并列取平均位次）
+                var lower = 0
+                var upper = 0
+                for value in sortedValues {
+                    if value < raw - 1e-9 { lower += 1 }
+                    if value <= raw + 1e-9 { upper += 1 }
+                }
+                let rank = (Double(lower) + Double(max(lower, upper - 1))) / 2.0
+                return rank / Double(sortedValues.count - 1)
             }
 
             var rescored: [SearchHit] = []
