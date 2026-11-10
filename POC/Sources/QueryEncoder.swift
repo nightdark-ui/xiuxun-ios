@@ -7,6 +7,8 @@ struct QueryFeatures {
     var clsRows: [[Float]]
     /// 每个旋转角度 × 9 块的 tile 特征（384 维）
     var tileRows: [[Float]]
+    /// 第一个尺度（fraction 1.0）的 patch token，每行 384，供 dense 匹配
+    var patchRows: [[Float]] = []
     var label: String
     var fromCache: Bool = false
 }
@@ -84,9 +86,19 @@ final class QueryEncoder {
                 ImageOps.prepareTensor(variant.image, fraction: $0, size: 224)
             }
             let encoded = try small.encode(batch: fractionTensors)
-            for item in encoded {
-                if let first = item.first {
-                    clsRows.append(normalize(first.cls))
+            for (index, item) in encoded.enumerated() {
+                guard let first = item.first else { continue }
+                clsRows.append(normalize(first.cls))
+                // 只保留第一个尺度（fraction 1.0）的 patch，用于 dense 匹配
+                if index == 0, !first.patches.isEmpty {
+                    var rows: [[Float]] = []
+                    let rowCount = first.patches.count / 384
+                    rows.reserveCapacity(rowCount)
+                    for r in 0..<rowCount {
+                        let start = r * 384
+                        rows.append(normalize(Array(first.patches[start..<(start + 384)])))
+                    }
+                    patchRows.append(contentsOf: rows)
                 }
             }
 
@@ -102,7 +114,7 @@ final class QueryEncoder {
             }
         }
 
-        let features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征")
+        let features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征", patchRows: patchRows)
         saveCache(key: key, features: features)
         return features
     }
