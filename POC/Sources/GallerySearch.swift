@@ -252,6 +252,8 @@ final class GallerySearch {
         if let heavy = heavy, options.deepReview || true {
             let structureStart = Date()
             let queryDescriptor = StructureScore.describe(enhancedGray)
+            let descriptorMs = Date().timeIntervalSince(structureStart) * 1000
+            note += note.isEmpty ? String(format: "特征计算 %.0fms", descriptorMs) : String(format: "；特征计算 %.0fms", descriptorMs)
             var rescored: [SearchHit] = []
             rescored.reserveCapacity(finalList.count)
             for var hit in finalList {

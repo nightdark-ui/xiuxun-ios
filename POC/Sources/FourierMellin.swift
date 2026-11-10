@@ -1,54 +1,29 @@
 import Foundation
+import Accelerate
 
-/// Fourier-Mellin 描述子（PC `features._fourier_mellin` 的 Swift 实现）
+/// Fourier-Mellin 描述子（PC `features._fourier_mellin` 的 Swift 版）
 ///
-/// 流程：structure → 192×192 → 对数极坐标(180×96) → 二维 FFT → 取幅值
-///      → log1p → 高斯模糊 → 缩到 16×16 → 去均值 → L2 归一化（256 维）
+/// 流程：structure → 192×192 → 对数极坐标(180×96) → 二维 FFT → 幅值
+///      → log1p → 高斯模糊 → 16×16 → 去均值 → L2 归一化（256 维）
 ///
-/// 对数极坐标让描述子对旋转和缩放不敏感，适合区分"线条疏密/粗细"。
+/// FFT 用 Accelerate 的 vDSP DFT（96 = 2⁵·3、180 = 2²·3²·5，均可分解）。
 enum FourierMellin {
     static let workSide = 192
     static let angleCount = 180
     static let radiusCount = 96
     static let outSide = 16
 
-    /// - Parameter edge: 80×80 或任意方形边缘图（0…1）
     static func descriptor(edge: [Float], side: Int) -> [Float] {
-        // 1) 放大到 192×192（双线性）
         let work = resize(edge, from: side, to: workSide)
+        var polar = logPolar(work)
 
-        // 2) 对数极坐标采样：rows = 角度，cols = 半径
-        var polar = [Float](repeating: 0, count: angleCount * radiusCount)
-        let center = Double(workSide) / 2.0
-        let maxRadius = Double(workSide) / 2.0
-        let logMax = log(maxRadius)
-        for a in 0..<angleCount {
-            let angle = Double(a) / Double(angleCount) * 2.0 * Double.pi
-            let cosA = cos(angle)
-            let sinA = sin(angle)
-            for r in 0..<radiusCount {
-                // 对数半径：r=0 对应 1 像素，r=max 对应 maxRadius
-                let t = Double(r) / Double(radiusCount - 1)
-                let radius = exp(t * logMax)
-                let x = center + cosA * radius
-                let y = center + sinA * radius
-                polar[a * radiusCount + r] = sample(work, side: workSide, x: x, y: y)
-            }
-        }
-
-        // 3) 二维 DFT（对数极坐标尺寸不大，直接 O(n²) 可接受）
-        let spectrum = fft2Magnitude(polar, rows: angleCount, cols: radiusCount)
-
-        // 4) log1p
+        let spectrum = fft2Magnitude(&polar, rows: angleCount, cols: radiusCount)
         var values = spectrum.map { Float(log1p(Double($0))) }
-
-        // 5) 高斯模糊（σ=1，分离卷积）
         values = gaussianBlur(values, rows: angleCount, cols: radiusCount, sigma: 1.0)
 
-        // 6) 缩小到 16×16（区域平均）
         var small = [Float](repeating: 0, count: outSide * outSide)
-        let rowStep = angleCount / outSide
-        let colStep = radiusCount / outSide
+        let rowStep = max(1, angleCount / outSide)
+        let colStep = max(1, radiusCount / outSide)
         for gy in 0..<outSide {
             for gx in 0..<outSide {
                 var sum: Float = 0
@@ -63,7 +38,6 @@ enum FourierMellin {
             }
         }
 
-        // 7) 去均值 + L2 归一化
         let mean = small.reduce(0, +) / Float(small.count)
         var centered = small.map { $0 - mean }
         var norm: Float = 0
@@ -75,7 +49,87 @@ enum FourierMellin {
         return centered
     }
 
-    // MARK: - 内部
+    // MARK: - 对数极坐标
+
+    private static func logPolar(_ work: [Float]) -> [Float] {
+        var polar = [Float](repeating: 0, count: angleCount * radiusCount)
+        let center = Double(workSide) / 2.0
+        let maxRadius = Double(workSide) / 2.0
+        let logMax = log(maxRadius)
+        for a in 0..<angleCount {
+            let angle = Double(a) / Double(angleCount) * 2.0 * Double.pi
+            let cosA = cos(angle)
+            let sinA = sin(angle)
+            for r in 0..<radiusCount {
+                let t = Double(r) / Double(radiusCount - 1)
+                let radius = exp(t * logMax)
+                let x = center + cosA * radius
+                let y = center + sinA * radius
+                polar[a * radiusCount + r] = sample(work, side: workSide, x: x, y: y)
+            }
+        }
+        return polar
+    }
+
+    // MARK: - FFT（vDSP）
+
+    private static func fft2Magnitude(_ input: inout [Float], rows: Int, cols: Int) -> [Float] {
+        guard let rowSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(cols), .FORWARD),
+              let colSetup = vDSP_DFT_zop_CreateSetup(nil, vDSP_Length(rows), .FORWARD) else {
+            return [Float](repeating: 0, count: rows * cols)
+        }
+        defer {
+            vDSP_DFT_DestroySetup(rowSetup)
+            vDSP_DFT_DestroySetup(colSetup)
+        }
+
+        // 行变换（长度 cols）
+        var rowReal = [Float](repeating: 0, count: cols)
+        var rowImag = [Float](repeating: 0, count: cols)
+        var outReal = [Float](repeating: 0, count: cols)
+        var outImag = [Float](repeating: 0, count: cols)
+        var interleaved = [Float](repeating: 0, count: rows * cols * 2)
+
+        for r in 0..<rows {
+            for c in 0..<cols {
+                rowReal[c] = input[r * cols + c]
+                rowImag[c] = 0
+            }
+            vDSP_DFT_Execute(rowSetup, rowReal, rowImag, &outReal, &outImag)
+            for c in 0..<cols {
+                interleaved[(r * cols + c) * 2] = outReal[c]
+                interleaved[(r * cols + c) * 2 + 1] = outImag[c]
+            }
+        }
+
+        // 列变换（长度 rows）
+        var colReal = [Float](repeating: 0, count: rows)
+        var colImag = [Float](repeating: 0, count: rows)
+        var colOutReal = [Float](repeating: 0, count: rows)
+        var colOutImag = [Float](repeating: 0, count: rows)
+        var magnitude = [Float](repeating: 0, count: rows * cols)
+
+        let shiftRow = rows / 2
+        let shiftCol = cols / 2
+        for c in 0..<cols {
+            for r in 0..<rows {
+                colReal[r] = interleaved[(r * cols + c) * 2]
+                colImag[r] = interleaved[(r * cols + c) * 2 + 1]
+            }
+            vDSP_DFT_Execute(colSetup, colReal, colImag, &colOutReal, &colOutImag)
+            for k in 0..<rows {
+                let re = colOutReal[k]
+                let im = colOutImag[k]
+                let value = (re * re + im * im).squareRoot()
+                let shiftedRow = (k + shiftRow) % rows
+                let shiftedCol = (c + shiftCol) % cols
+                magnitude[shiftedRow * cols + shiftedCol] = value
+            }
+        }
+        return magnitude
+    }
+
+    // MARK: - 工具
 
     private static func resize(_ source: [Float], from side: Int, to target: Int) -> [Float] {
         guard side > 1, side != target else { return source }
@@ -118,44 +172,6 @@ enum FourierMellin {
         let top = v00 * (1 - fx) + v01 * fx
         let bottom = v10 * (1 - fx) + v11 * fx
         return top * (1 - fy) + bottom * fy
-    }
-
-    /// 二维 DFT 幅值（含 fftshift）
-    private static func fft2Magnitude(_ input: [Float], rows: Int, cols: Int) -> [Float] {
-        // 行方向 DFT
-        var rowTransformed = [Double](repeating: 0, count: rows * cols * 2)
-        for r in 0..<rows {
-            for k in 0..<cols {
-                var re = 0.0
-                var im = 0.0
-                for n in 0..<cols {
-                    let angle = -2.0 * Double.pi * Double(k * n) / Double(cols)
-                    let value = Double(input[r * cols + n])
-                    re += value * cos(angle)
-                    im += value * sin(angle)
-                }
-                rowTransformed[(r * cols + k) * 2] = re
-                rowTransformed[(r * cols + k) * 2 + 1] = im
-            }
-        }
-        // 列方向 DFT
-        var magnitude = [Float](repeating: 0, count: rows * cols)
-        for c in 0..<cols {
-            for k in 0..<rows {
-                var re = 0.0
-                var im = 0.0
-                for n in 0..<rows {
-                    let angle = -2.0 * Double.pi * Double(k * n) / Double(rows)
-                    let vr = rowTransformed[(n * cols + c) * 2]
-                    let vi = rowTransformed[(n * cols + c) * 2 + 1]
-                    re += vr * cos(angle) - vi * sin(angle)
-                    im += vr * sin(angle) + vi * cos(angle)
-                }
-                magnitude[((k + rows / 2) % rows) * cols + ((c + cols / 2) % cols)] =
-                    Float((re * re + im * im).squareRoot())
-            }
-        }
-        return magnitude
     }
 
     private static func gaussianBlur(_ data: [Float], rows: Int, cols: Int, sigma: Double) -> [Float] {
