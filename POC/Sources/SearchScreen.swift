@@ -208,7 +208,7 @@ struct SearchView: View {
             set: { if !$0 { detail = nil } }
         )) {
             if let hit = detail {
-                ResultDetail(hit: hit, package: app.package)
+                ResultDetail(hit: hit, package: app.package, queryImage: model.queryThumb)
             }
         }
     }
@@ -500,6 +500,8 @@ extension SearchHit: Identifiable {
 struct ResultDetail: View {
     let hit: SearchHit
     let package: GalleryPackage?
+    let queryImage: UIImage?
+    @State private var candidateImage: UIImage?
     @Environment(\.dismiss) private var dismiss
     @State private var shareItem: UIImage?
 
@@ -543,6 +545,12 @@ struct ResultDetail: View {
                         row("base", hit.baseScore > 0 ? String(format: "%.3f", hit.baseScore) : "未参与")
                     }
 
+                    ScoresPanel(
+                        queryImage: queryImage,
+                        candidateImage: candidateImage,
+                        dinoScore: hit.score
+                    )
+
                     HStack(spacing: 10) {
                         PrimaryButton(title: "分享 / 保存") { loadImage() }
                         Button {
@@ -566,6 +574,15 @@ struct ResultDetail: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("关闭") { dismiss() }
+                }
+            }
+            .task {
+                guard let package = package, candidateImage == nil else { return }
+                let url = package.imageURL(for: hit.design)
+                DispatchQueue.global().async {
+                    if let data = try? Data(contentsOf: url), let image = UIImage(data: data) {
+                        DispatchQueue.main.async { candidateImage = image }
+                    }
                 }
             }
             .sheet(item: Binding(
