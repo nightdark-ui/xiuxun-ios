@@ -92,6 +92,17 @@ struct ContentView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.blue)
 
+                NavigationLink {
+                    GalleryBrowser(app: app)
+                } label: {
+                    Text(浏览图库)
+                        .font(.footnote).bold()
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(UI.orange)
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                }
+
                 HStack(spacing: 10) {
                     Button {
                         app.verifyGallery()
