@@ -321,40 +321,18 @@ final class GallerySearch {
             note += note.isEmpty ? "已启用轮廓匹配" : "；已启用轮廓匹配"
         }
 
-        // 最终分改为相对分：三个分量按名次加权，保证第 1 名接近 100%、依次递减
+        // 显示分按名次铺开（仅影响显示，排序已按相似度确定）
         if finalList.count > 1 {
-            func ranks(_ values: [Double]) -> [Double] {
-                let sorted = values.sorted()
-                var result = [Double](repeating: 0, count: values.count)
-                for (index, value) in values.enumerated() {
-                    var lower = 0
-                    var upper = 0
-                    for candidate in sorted {
-                        if candidate < value - 1e-9 { lower += 1 }
-                        if candidate <= value + 1e-9 { upper += 1 }
-                    }
-                    let rank = (Double(lower) + Double(max(lower, upper - 1))) / 2.0
-                    result[index] = sorted.count > 1 ? rank / Double(sorted.count - 1) : 1.0
-                }
-                return result
-            }
-
-            let aiRanks = ranks(finalList.map { $0.aiScore })
-            let baseRanks = ranks(finalList.map { $0.baseScore })
-            let structureRanks = ranks(finalList.map { $0.structureScore })
-            let hasBase = finalList.contains { $0.baseScore > 0 }
-
-            var relisted: [SearchHit] = []
-            relisted.reserveCapacity(finalList.count)
+            let count = finalList.count
+            var display: [SearchHit] = []
+            display.reserveCapacity(count)
             for (index, var hit) in finalList.enumerated() {
-                if hasBase {
-                    hit.score = 0.60 * aiRanks[index] + 0.25 * baseRanks[index] + 0.15 * structureRanks[index]
-                } else {
-                    hit.score = 0.75 * aiRanks[index] + 0.25 * structureRanks[index]
-                }
-                relisted.append(hit)
+                // 第 1 名 100%，最后一名约 55%，中间线性递减
+                let step = 1.0 - Double(index) / Double(count - 1)
+                hit.score = 0.55 + 0.45 * step
+                display.append(hit)
             }
-            finalList = relisted.sorted { $0.score > $1.score }
+            finalList = display
         }
 
         // 识别严格度过滤：精准=只留高分；宽松=全部保留
