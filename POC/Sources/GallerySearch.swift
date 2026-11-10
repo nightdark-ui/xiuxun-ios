@@ -248,6 +248,17 @@ final class GallerySearch {
             note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
         }
 
+        // 识别严格度过滤：精准=只留高分；宽松=全部保留
+        let threshold: Double = options.strictness == 0 ? 0.72 : (options.strictness == 1 ? 0.50 : 0.0)
+        if threshold > 0 {
+            let filtered = finalList.filter { $0.score >= threshold }
+            if !filtered.isEmpty {
+                finalList = filtered
+            } else {
+                note += note.isEmpty ? "结果分数偏低" : "；结果分数偏低"
+            }
+        }
+
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
         return SearchOutcome(hits: finalList, timings: timings, note: note)

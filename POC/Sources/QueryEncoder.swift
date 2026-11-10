@@ -23,6 +23,10 @@ struct SearchOptions {
     var baseInputSize = 224
     var sensitivity = 1.0
     var selectedLibraries: Set<String> = []
+    var autoCrop: Bool = true
+    var localFirst: Bool = false
+    /// 0 精准 / 1 均衡 / 2 宽松
+    var strictness: Int = 1
     var codeFrom: String = ""
     var codeTo: String = ""
 }
@@ -61,6 +65,11 @@ final class QueryEncoder {
         )
         if let cached = loadCache(key: key) { return cached }
 
+        var base = image
+        if options.autoCrop {
+            base = ImageOps.autoCropSubject(image)
+        }
+
         let angles: [Int] = {
             if !options.rotationEnabled { return [0] }
             return options.fastMode ? [0, 90, 180, 270] : [0, 45, 90, 135, 180, 225, 270, 315]
@@ -68,10 +77,10 @@ final class QueryEncoder {
 
         var variants: [(label: String, image: PilImaging.GrayImage)] = []
         for angle in angles {
-            variants.append(("rot\(angle)", ImageOps.rotate(image, degrees: angle)))
+            variants.append(("rot\(angle)", ImageOps.rotate(base, degrees: angle)))
         }
         if options.mirrorEnabled {
-            let mirrored = ImageOps.mirror(image)
+            let mirrored = ImageOps.mirror(base)
             for angle in angles {
                 variants.append(("mir\(angle)", ImageOps.rotate(mirrored, degrees: angle)))
             }

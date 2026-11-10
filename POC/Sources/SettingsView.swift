@@ -18,6 +18,15 @@ final class AppSettings: ObservableObject {
     @Published var base336: Bool {
         didSet { UserDefaults.standard.set(base336, forKey: "set.base336") }
     }
+    @Published var autoCrop: Bool {
+        didSet { UserDefaults.standard.set(autoCrop, forKey: "set.autoCrop") }
+    }
+    @Published var localFirst: Bool {
+        didSet { UserDefaults.standard.set(localFirst, forKey: "set.localFirst") }
+    }
+    @Published var strictness: Int {
+        didSet { UserDefaults.standard.set(strictness, forKey: "set.strictness") }
+    }
     @Published var libraryFilter: Set<String> {
         didSet { UserDefaults.standard.set(Array(libraryFilter), forKey: "set.libraryFilter") }
     }
@@ -37,6 +46,9 @@ final class AppSettings: ObservableObject {
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
         base336 = defaults.bool(forKey: "set.base336")
+        autoCrop = defaults.object(forKey: "set.autoCrop") as? Bool ?? true
+        localFirst = defaults.bool(forKey: "set.localFirst")
+        strictness = defaults.object(forKey: "set.strictness") as? Int ?? 1
         libraryFilter = Set(defaults.stringArray(forKey: "set.libraryFilter") ?? [])
         codeFrom = defaults.string(forKey: "set.codeFrom") ?? ""
         codeTo = defaults.string(forKey: "set.codeTo") ?? ""
@@ -53,6 +65,9 @@ final class AppSettings: ObservableObject {
         options.resultCount = resultCount
         options.baseInputSize = base336 ? 336 : 224
         options.selectedLibraries = libraryFilter
+        options.autoCrop = autoCrop
+        options.localFirst = localFirst
+        options.strictness = strictness
         options.codeFrom = codeFrom.trimmingCharacters(in: .whitespaces)
         options.codeTo = codeTo.trimmingCharacters(in: .whitespaces)
         return options
@@ -66,8 +81,20 @@ struct SettingsView: View {
         Form {
             Section {
                 Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
+                Toggle("自动裁切主体", isOn: $settings.autoCrop)
+                Toggle("局部来图优先", isOn: $settings.localFirst)
                 Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
                 Toggle("镜像搜索（更慢，默认关）", isOn: $settings.mirrorEnabled)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("识别严格度").font(.system(size: 14))
+                    Segmented(
+                        options: ["精准", "均衡", "宽松"],
+                        selected: Binding(
+                            get: { settings.strictness },
+                            set: { settings.strictness = $0 }
+                        )
+                    )
+                }
             } header: {
                 Text("搜索")
             } footer: {

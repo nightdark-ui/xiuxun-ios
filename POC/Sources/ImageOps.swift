@@ -98,6 +98,62 @@ enum ImageOps {
         return PilImaging.GrayImage(width: newW, height: newH, pixels: output)
     }
 
+    /// 自动裁切主体：裁掉四周的空白/纯色背景（安卓「自动裁切主体」）。
+    /// 做法：以边缘像素的中位色当背景色，找出与之差异明显的内容外接框，留 3% 余量。
+    static func autoCropSubject(_ image: PilImaging.GrayImage) -> PilImaging.GrayImage {
+        let w = image.width
+        let h = image.height
+        guard w > 32, h > 32 else { return image }
+
+        // 估计背景灰度：四条边采样取中位数
+        var borderSamples: [UInt8] = []
+        borderSamples.reserveCapacity(4 * 128)
+        for x in stride(from: 0, to: w, by: max(1, w / 64)) {
+            borderSamples.append(image.pixels[x])
+            borderSamples.append(image.pixels[(h - 1) * w + x])
+        }
+        for y in stride(from: 0, to: h, by: max(1, h / 64)) {
+            borderSamples.append(image.pixels[y * w])
+            borderSamples.append(image.pixels[y * w + (w - 1)])
+        }
+        borderSamples.sort()
+        let background = Int(borderSamples[borderSamples.count / 2])
+        let threshold = 28
+
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            let row = y * w
+            for x in 0..<w {
+                if abs(Int(image.pixels[row + x]) - background) > threshold {
+                    if x < minX { minX = x }
+                    if x > maxX { maxX = x }
+                    if y < minY { minY = y }
+                    if y > maxY { maxY = y }
+                }
+            }
+        }
+        guard maxX > minX, maxY > minY else { return image }
+
+        // 留 3% 余量，且至少 64px，避免裁得过紧
+        let marginX = max(8, Int(Double(maxX - minX) * 0.03))
+        let marginY = max(8, Int(Double(maxY - minY) * 0.03))
+        let left = max(0, minX - marginX)
+        let top = max(0, minY - marginY)
+        let right = min(w, maxX + marginX)
+        let bottom = min(h, maxY + marginY)
+
+        let cropW = right - left
+        let cropH = bottom - top
+        guard cropW >= 64, cropH >= 64, cropW * cropH < w * h else { return image }
+
+        var output = [UInt8](repeating: 0, count: cropW * cropH)
+        for y in 0..<cropH {
+            let src = (top + y) * w + left
+            for x in 0..<cropW { output[y * cropW + x] = image.pixels[src + x] }
+        }
+        return PilImaging.GrayImage(width: cropW, height: cropH, pixels: output)
+    }
+
     /// 中心方形裁切 + BICUBIC 缩放到 size，再归一化成 NCHW 张量
     static func prepareTensor(
         _ image: PilImaging.GrayImage,
