@@ -49,6 +49,7 @@ final class SearchModel: ObservableObject {
     @Published var previewImage: UIImage?
     @Published var queryThumb: UIImage?
     @Published var elapsedText: String = ""
+    @Published var lastStep: String = ProbeTrace.last
 
     var options: SearchOptions { AppSettings.shared.makeOptions() }
 
@@ -72,6 +73,9 @@ final class SearchModel: ObservableObject {
         note = ""
         progressText = "准备中…"
         queryThumb = image
+        lastStep = ""
+        ProbeTrace.clear()
+        ProbeTrace.mark(.start)
         prepare(package: package)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -88,13 +92,17 @@ final class SearchModel: ObservableObject {
                 try data.write(to: tempURL)
                 defer { try? FileManager.default.removeItem(at: tempURL) }
 
+                ProbeTrace.mark(.decode)
                 self.update("预处理…")
+                ProbeTrace.mark(.gray)
                 let enhanced = try ImageOps.loadEnhancedGray(from: tempURL)
 
+                ProbeTrace.mark(.loadSession)
                 let encoder = try self.getEncoder()
                 guard let search = self.search else {
                     throw InstallError.verify("搜索器未就绪")
                 }
+                ProbeTrace.mark(.runModel)
                 let outcome = try search.search(
                     enhancedGray: enhanced,
                     options: self.options,
@@ -110,6 +118,8 @@ final class SearchModel: ObservableObject {
                     self.progressText = ""
                     self.elapsedText = String(format: "%.1f 秒", outcome.timings.totalMs / 1000)
                     self.queryThumb = image
+                    self.lastStep = ""
+                    ProbeTrace.clear()
                 }
                 _ = started
             } catch {
@@ -117,6 +127,7 @@ final class SearchModel: ObservableObject {
                     self.busy = false
                     self.progressText = ""
                     self.errorText = error.localizedDescription
+                    self.lastStep = ProbeTrace.last
                 }
             }
         }
@@ -166,6 +177,12 @@ struct SearchView: View {
 
             if !model.errorText.isEmpty {
                 Text(model.errorText).font(.caption).foregroundColor(.red)
+            }
+
+            if !model.lastStep.isEmpty && model.lastStep != "完成" {
+                Text("上次中断在：\(model.lastStep)")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
             }
 
             if let timings = model.timings {
