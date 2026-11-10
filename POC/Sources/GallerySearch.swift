@@ -389,6 +389,34 @@ final class GallerySearch {
         return 0.25 * base + 0.75 * dense
     }
 
+    /// 返回最佳余弦及其对应的目标行号（设计侧尺度）
+    private static func bestCosineWithRow(
+        queryRows: [[Float]],
+        target: UnsafePointer<Float>,
+        rows: Int
+    ) -> (score: Double, row: Int) {
+        var best = -1.0
+        var bestRow = 0
+        for row in queryRows {
+            for r in 0..<rows {
+                let pointer = target.advanced(by: r * dim)
+                var dot = 0.0
+                var normQ = 0.0
+                var normT = 0.0
+                for i in 0..<dim {
+                    let q = Double(row[i])
+                    let tv = Double(pointer[i])
+                    dot += q * tv
+                    normQ += q * q
+                    normT += tv * tv
+                }
+                let value = dot / max(1e-9, sqrt(normQ) * sqrt(normT))
+                if value > best { best = value; bestRow = r }
+            }
+        }
+        return (max(0, best), bestRow)
+    }
+
     private static func bestCosine(
         queryRows: [[Float]],
         target: UnsafePointer<Float>,
