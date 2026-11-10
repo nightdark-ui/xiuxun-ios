@@ -38,6 +38,7 @@ struct SearchOutcome {
 /// 图库搜索（第一版：CLS + tile 召回，可选 base 重排；SIFT/结构校验后续再加）
 final class GallerySearch {
     private let package: GalleryPackage
+    private let heavy: HeavyStore?
     private static let dim = 384
     private static let baseDim = 768
 
@@ -46,6 +47,7 @@ final class GallerySearch {
 
     init(package: GalleryPackage) {
         self.package = package
+        self.heavy = HeavyStore(root: package.root)
     }
 
     func search(
@@ -140,6 +142,29 @@ final class GallerySearch {
 
         if shouldCancel() { throw InstallError.cancelled }
 
+        // ---------- 2.5 dense 局部匹配（PC 的 ai_component 里占 80%） ----------
+        var denseScores: [Int: Double] = [:]
+        if let heavy = heavy, !query.patchRows.isEmpty {
+            progress("局部匹配…")
+            let denseStart = Date()
+            let topForDense = Array(ranked.prefix(40))
+            for item in topForDense {
+                let design = package.designs[item.index]
+                guard let features = heavy.features(at: design.heavyOffset) else { continue }
+                denseScores[item.index] = DenseMatch.similarity(
+                    queryPatches: query.patchRows,
+                    designTiles: features.tiles5
+                )
+            }
+            // 用 PC 的结构重排：ai = 0.25 × (cls+tile) + 0.75 × dense
+            ranked.sort { left, right in
+                let a = Self.blend(left.cls, left.tile, denseScores[left.index])
+                let b = Self.blend(right.cls, right.tile, denseScores[right.index])
+                return a > b
+            }
+            _ = denseStart
+        }
+
         // ---------- 3. base 重排 ----------
         let baseLimit = options.deepReview ? 60 : 30
         let baseSize = options.deepReview ? 336 : options.baseInputSize
@@ -162,7 +187,7 @@ final class GallerySearch {
 
         // ---------- 4. 组装结果 ----------
         let finalHits: [SearchHit] = ranked.prefix(max(1, options.resultCount)).map { item in
-            let ai = Self.combined(item.cls, item.tile)
+            let ai = Self.blend(item.cls, item.tile, denseScores[item.index])
             let baseScore = baseScores[item.index] ?? 0
             let score = baseScores[item.index] == nil ? ai : ai * 0.7 + baseScore * 0.3
             return SearchHit(
@@ -239,6 +264,13 @@ final class GallerySearch {
 
     private static func combined(_ cls: Double, _ tile: Double) -> Double {
         tile <= 0 ? cls : cls * clsWeight + tile * tileWeight
+    }
+
+    /// 召回分与 dense 分融合（PC：AI_CLS 0.20 / AI_DENSE 0.80，这里把 cls+tile 当一路）
+    static func blend(_ cls: Double, _ tile: Double, _ dense: Double?) -> Double {
+        let base = combined(cls, tile)
+        guard let dense = dense else { return base }
+        return 0.25 * base + 0.75 * dense
     }
 
     private static func bestCosine(
