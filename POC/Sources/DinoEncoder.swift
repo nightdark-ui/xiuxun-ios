@@ -20,6 +20,7 @@ final class DinoEncoder {
     /// 建库用的尺度
     static let designFractions: [Double] = [1.0, 0.7, 0.5, 0.35, 0.25]
 
+    private let env: ORTEnv          // 必须强引用：session 内部持有它的 logging manager
     private let session: ORTSession
     private let inputName: String
     private let outputNames: Set<String>
@@ -37,13 +38,14 @@ final class DinoEncoder {
         self.inputSize = inputSize
 
         let started = Date()
-        let env = try ORTEnv(loggingLevel: .warning)
+        let env = try ORTEnv(loggingLevel: .error)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(Int32(max(1, threads)))
         let session = try ORTSession(env: env, modelPath: url.path, sessionOptions: options)
         guard let first = try session.inputNames().first else {
             throw EncoderError.badModel("模型没有输入")
         }
+        self.env = env
         self.session = session
         self.inputName = first
         self.outputNames = Set(try session.outputNames())
