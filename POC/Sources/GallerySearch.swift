@@ -7,6 +7,8 @@ struct SearchHit {
     let clsScore: Double
     let tileScore: Double
     let baseScore: Double
+    var visionScore: Double = 0
+    var structureScore: Double = 0
 }
 
 /// 分阶段耗时
@@ -50,7 +52,9 @@ final class GallerySearch {
         options: SearchOptions,
         encoder: QueryEncoder,
         progress: (String) -> Void = { _ in },
-        shouldCancel: () -> Bool = { false }
+        shouldCancel: () -> Bool = { false },
+        queryImage: UIImage? = nil,
+        candidateImage: (DesignRef) -> UIImage? = { _ in nil }
     ) throws -> SearchOutcome {
         let started = Date()
         var timings = SearchTimings()
@@ -113,7 +117,38 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            timings.totalMs = Date().timeIntervalSince(started) * 1000
+            // ---------- 5. 深度复核：Vision + 结构 三路融合 ----------
+        var finalList = finalHits
+        if options.deepReview, let query = queryImage, finalList.count > 1 {
+            progress("深度复核…")
+            let visionQuery = ExtraScores.visionPrint(query)
+            let structureQuery = ExtraScores.structureSignature(query)
+            var enriched: [SearchHit] = []
+            enriched.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                var vision = 0.0
+                var structure = 0.0
+                if let candidate = candidateImage(hit.design) {
+                    if let a = visionQuery, let b = ExtraScores.visionPrint(candidate) {
+                        vision = max(0, ExtraScores.cosine(a, b))
+                    }
+                    if let a = structureQuery, let b = ExtraScores.structureSignature(candidate) {
+                        structure = max(0, ExtraScores.cosine(a, b))
+                    }
+                }
+                hit.visionScore = vision
+                hit.structureScore = structure
+                if vision > 0 || structure > 0 {
+                    // 0.6 DINO + 0.25 Vision + 0.15 结构
+                    hit.score = 0.6 * hit.score + 0.25 * vision + 0.15 * structure
+                }
+                enriched.append(hit)
+            }
+            finalList = enriched.sorted { $0.score > $1.score }
+            note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
+        }
+
+        timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
@@ -171,7 +206,7 @@ final class GallerySearch {
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
-        return SearchOutcome(hits: finalHits, timings: timings, note: note)
+        return SearchOutcome(hits: finalList, timings: timings, note: note)
     }
 
     /// 从编号里取出数字部分（SL9015 → 9015）
