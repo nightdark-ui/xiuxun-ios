@@ -48,7 +48,8 @@ enum ContourScore {
         for contour in observation.topLevelContours {
             let points = contour.normalizedPoints
             guard points.count >= 2 else { continue }
-            var previous: CGPoint?
+            var previousX: Double?
+            var previousY: Double?
             var previousAngle: Double?
             for point in points {
                 let nx = Double(point.x)
@@ -60,9 +61,9 @@ enum ContourScore {
                 let py = min(side - 1, max(0, Int(ny * Double(side))))
                 mask[py * side + px] = 1.0
 
-                if let last = previous {
-                    let dx = nx - Double(last.x)
-                    let dy = ny - Double(last.y)
+                if let lastX = previousX, let lastY = previousY {
+                    let dx = nx - lastX
+                    let dy = ny - lastY
                     totalLength += (dx * dx + dy * dy).squareRoot()
                     let angle = atan2(dy, dx)
                     if let lastAngle = previousAngle {
@@ -73,7 +74,8 @@ enum ContourScore {
                     }
                     previousAngle = angle
                 }
-                previous = point
+                previousX = nx
+                previousY = ny
             }
         }
 
@@ -91,7 +93,6 @@ enum ContourScore {
             }
         }
 
-        let filled = dilated.reduce(0) { $0 + ($1 > 0 ? 1 : 0) }
         let bboxFill = (minX < maxX && minY < maxY)
             ? ((maxX - minX) * (maxY - minY))
             : 0
