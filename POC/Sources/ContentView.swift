@@ -92,10 +92,32 @@ struct ContentView: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.blue)
 
-                Button(role: .destructive) {
-                    app.clearGallery()
-                } label: {
-                    Text("删除图库").font(.footnote)
+                HStack(spacing: 10) {
+                    Button {
+                        app.verifyGallery()
+                    } label: {
+                        Text(app.verifying ? "校验中…" : "校验图库")
+                            .font(.footnote).bold()
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(UI.orange.opacity(0.12))
+                            .foregroundColor(UI.orange)
+                            .clipShape(Capsule())
+                    }
+                    .disabled(app.verifying)
+
+                    Button(role: .destructive) {
+                        app.clearGallery()
+                    } label: {
+                        Text("删除图库").font(.footnote)
+                    }
+                    Spacer()
+                }
+
+                if !app.verifyText.isEmpty {
+                    Text(app.verifyText)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(UI.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 6) {

@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     @Published var updateSummary: String = ""
     @Published var updateReady: Bool = false
     @Published var updating: Bool = false
+    @Published var verifying: Bool = false
+    @Published var verifyText: String = ""
 
     @Published var serverAddress: String {
         didSet { UserDefaults.standard.set(serverAddress, forKey: Self.addressKey) }
@@ -157,6 +159,23 @@ final class AppState: ObservableObject {
                     self.updating = false
                     self.errorText = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    /// 手动校验图库完整性
+    func verifyGallery() {
+        guard let package = package, !verifying else { return }
+        verifying = true
+        verifyText = "校验中…"
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            let report = GalleryVerifier.verify(package) { text in
+                DispatchQueue.main.async { self.verifyText = text }
+            }
+            DispatchQueue.main.async {
+                self.verifying = false
+                self.verifyText = report.summary
             }
         }
     }
