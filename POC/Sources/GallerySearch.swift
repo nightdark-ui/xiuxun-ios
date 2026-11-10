@@ -49,7 +49,8 @@ final class GallerySearch {
         enhancedGray: PilImaging.GrayImage,
         options: SearchOptions,
         encoder: QueryEncoder,
-        progress: (String) -> Void = { _ in }
+        progress: (String) -> Void = { _ in },
+        shouldCancel: () -> Bool = { false }
     ) throws -> SearchOutcome {
         let started = Date()
         var timings = SearchTimings()
@@ -78,6 +79,7 @@ final class GallerySearch {
 
         package.withRecallPointer { base, count in
             for index in 0..<count {
+                if shouldCancel() { return }
                 let design = package.designs[index]
                 if useLibraryFilter && !allowedLibraries.contains(design.library) { continue }
                 let record = base.advanced(by: index * GalleryPackage.recallFloats)
@@ -97,6 +99,8 @@ final class GallerySearch {
         }
 
         // SL 系列门控：如果第一名明显属于 SL 库，则只在 SL 库内重新排序
+        if shouldCancel() { throw InstallError.cancelled }
+
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
@@ -119,6 +123,8 @@ final class GallerySearch {
             }
         }
         timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
+
+        if shouldCancel() { throw InstallError.cancelled }
 
         // ---------- 3. base 重排 ----------
         let baseLimit = options.deepReview ? 60 : 30

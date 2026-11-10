@@ -53,6 +53,13 @@ final class SearchModel: ObservableObject {
 
     var options: SearchOptions { AppSettings.shared.makeOptions() }
 
+    private var cancelRequested = false
+
+    func cancel() {
+        cancelRequested = true
+        progressText = "正在取消…"
+    }
+
     private var encoder: QueryEncoder?
     private var search: GallerySearch?
     private var packageIdentity: Int = 0
@@ -67,6 +74,7 @@ final class SearchModel: ObservableObject {
     func run(image: UIImage, package: GalleryPackage) {
         guard !busy else { return }
         busy = true
+        cancelRequested = false
         errorText = ""
         hits = []
         timings = nil
@@ -107,7 +115,8 @@ final class SearchModel: ObservableObject {
                     enhancedGray: enhanced,
                     options: self.options,
                     encoder: encoder,
-                    progress: { text in self.update(text) }
+                    progress: { text in self.update(text) },
+                    shouldCancel: { self.cancelRequested }
                 )
 
                 DispatchQueue.main.async {
@@ -153,6 +162,7 @@ struct SearchView: View {
     @State private var showPicker = false
     @State private var showCamera = false
     @State private var detail: SearchHit?
+    @State private var cropImage: UIImage?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -173,6 +183,11 @@ struct SearchView: View {
             if model.busy {
                 ProgressView()
                 Text(model.progressText).font(.caption).foregroundColor(.secondary)
+                Button(role: .destructive) {
+                    model.cancel()
+                } label: {
+                    Text("取消搜索").font(.footnote)
+                }
             }
 
             if !model.errorText.isEmpty {
@@ -223,15 +238,24 @@ struct SearchView: View {
         .padding(.horizontal, 12)
         .sheet(isPresented: $showPicker) {
             ImagePicker(sourceType: .photoLibrary) { image in
-                if let package = app.package {
-                    model.run(image: image, package: package)
-                }
+                cropImage = image
             }
         }
         .sheet(isPresented: $showCamera) {
             ImagePicker(sourceType: .camera) { image in
-                if let package = app.package {
-                    model.run(image: image, package: package)
+                cropImage = image
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { cropImage != nil },
+            set: { showing in if !showing { cropImage = nil } }
+        )) {
+            if let image = cropImage {
+                CropScreen(image: image) { picked in
+                    if let package = app.package {
+                        model.run(image: picked, package: package)
+                    }
+                    cropImage = nil
                 }
             }
         }
