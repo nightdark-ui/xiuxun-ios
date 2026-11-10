@@ -248,6 +248,32 @@ final class GallerySearch {
             note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
         }
 
+        // 结构分（PC 的 old_score 那 25%）：edge 相关 + Hu 矩 + 统计量
+        if let heavy = heavy, options.deepReview || true {
+            let structureStart = Date()
+            let queryDescriptor = StructureScore.describe(enhancedGray)
+            var rescored: [SearchHit] = []
+            rescored.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                guard let features = heavy.features(at: hit.design.heavyOffset) else {
+                    rescored.append(hit)
+                    continue
+                }
+                let structure = StructureScore.structure(
+                    query: queryDescriptor,
+                    designEdge: features.edge,
+                    designHu: features.hu,
+                    designStats: features.stats
+                )
+                hit.structureScore = structure
+                hit.score = 0.75 * hit.score + 0.25 * structure
+                rescored.append(hit)
+            }
+            finalList = rescored.sorted { $0.score > $1.score }
+            timings.baseMs += Date().timeIntervalSince(structureStart) * 1000
+            note += note.isEmpty ? "已应用结构分" : "；已应用结构分"
+        }
+
         // 识别严格度过滤：精准=只留高分；宽松=全部保留
         let threshold: Double = options.strictness == 0 ? 0.72 : (options.strictness == 1 ? 0.50 : 0.0)
         if threshold > 0 {
