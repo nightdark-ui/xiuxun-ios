@@ -397,18 +397,8 @@ struct SearchView: View {
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             ZStack(alignment: .topLeading) {
-                if let package = app.package {
-                    AsyncImage(url: package.thumbURL(for: hit.design)) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } else {
-                            UI.pageBackground
-                        }
-                    }
-                    .frame(height: 120)
-                    .clipped()
+                CachedThumb(url: app.package?.thumbURL(for: hit.design), height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
                 Text("\(rank)")
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 3)
