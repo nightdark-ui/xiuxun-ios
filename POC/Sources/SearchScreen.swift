@@ -235,8 +235,13 @@ struct SearchView: View {
                 }
             }
         }
-        .sheet(item: $detail) { hit in
-            ResultDetail(hit: hit, package: app.package)
+        .sheet(isPresented: Binding(
+            get: { detail != nil },
+            set: { showing in if !showing { detail = nil } }
+        )) {
+            if let hit = detail {
+                ResultDetail(hit: hit, package: app.package)
+            }
         }
     }
 
@@ -297,11 +302,18 @@ struct ResultDetail: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if let package = package {
+                        // 先显示缩略图（立刻可见），原图加载完再替换，避免点开卡顿
                         AsyncImage(url: package.imageURL(for: hit.design)) { phase in
                             if let image = phase.image {
                                 image.resizable().aspectRatio(contentMode: .fit)
                             } else {
-                                ProgressView().frame(height: 220)
+                                AsyncImage(url: package.thumbURL(for: hit.design)) { thumb in
+                                    if let image = thumb.image {
+                                        image.resizable().aspectRatio(contentMode: .fit)
+                                    } else {
+                                        ProgressView().frame(height: 220)
+                                    }
+                                }
                             }
                         }
                     }
