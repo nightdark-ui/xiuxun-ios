@@ -59,11 +59,9 @@ jobs:
         run: |
           set -euo pipefail
           DEST=POC/Resources/dinov2-base-fp16.onnx
-          if [ ! -f "$\{DEST\}" ]; then
-            curl -fL --retry 3 --retry-all-errors -o "$\{DEST\}" \
-              https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
-          fi
-          ls -lh "$\{DEST\}"
+          curl -fL --retry 3 --retry-all-errors -o  \
+            https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
+          ls -lh 
 
       - name: Generate project
         working-directory: POC
