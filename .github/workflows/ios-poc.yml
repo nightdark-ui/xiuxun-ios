@@ -55,6 +55,11 @@ jobs:
 
           xcodegen --version
 
+      - name: Fetch base model
+        run: |
+          curl -fL --retry 3 -o POC/Resources/dinov2-base-fp16.onnx https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
+          ls -lh POC/Resources/dinov2-base-fp16.onnx
+
       - name: Generate project
         working-directory: POC
         run: |
@@ -104,14 +109,16 @@ jobs:
           test -n "$APP"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -r XiuxunPOC-unsigned.ipa Payload
-          ls -lh XiuxunPOC-unsigned.ipa
+          NAME="ChengYeXiu-v1.0.${GITHUB_RUN_NUMBER}-unsigned.ipa"
+          zip -r "$NAME" Payload
+          ls -lh "$NAME"
+          echo "IPA_NAME=$NAME" >> "$GITHUB_ENV"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: XiuxunPOC-unsigned-ipa
-          path: POC/XiuxunPOC-unsigned.ipa
+          name: ChengYeXiu-v1.0.${{ github.run_number }}-ipa
+          path: POC/ChengYeXiu-v1.0.*.ipa
           retention-days: 14
 
       - name: Dump logs
@@ -132,7 +139,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>/dev/null || true
-          gh release create latest POC/XiuxunPOC-unsigned.ipa --title "latest build" --notes "commit $GITHUB_SHA"
+          gh release create latest POC/ChengYeXiu-v1.0.*.ipa --title "v1.0.$GITHUB_RUN_NUMBER" --notes "commit $GITHUB_SHA"
 
       - name: Upload logs (always)
         if: always()
