@@ -254,20 +254,36 @@ final class GallerySearch {
             let queryDescriptor = StructureScore.describe(enhancedGray)
             let descriptorMs = Date().timeIntervalSince(structureStart) * 1000
             note += note.isEmpty ? String(format: "特征计算 %.0fms", descriptorMs) : String(format: "；特征计算 %.0fms", descriptorMs)
-            var rescored: [SearchHit] = []
-            rescored.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                guard let features = heavy.features(at: hit.design.heavyOffset) else {
-                    rescored.append(hit)
-                    continue
-                }
-                let structure = StructureScore.structure(
+            // 先算原始结构分
+            var raws: [Int: Double] = [:]
+            for hit in finalList {
+                guard let features = heavy.features(at: hit.design.heavyOffset) else { continue }
+                raws[hit.design.index] = StructureScore.structure(
                     query: queryDescriptor,
                     designEdge: features.edge,
                     designFm: features.fm,
                     designHu: features.hu,
                     designStats: features.stats
                 )
+            }
+            // 候选内归一化：边缘相关在同类纹理上普遍接近 1，直接用会失去区分度
+            let values = Array(raws.values)
+            let minValue = values.min() ?? 0
+            let maxValue = values.max() ?? 0
+            let span = maxValue - minValue
+            func normalized(_ raw: Double) -> Double {
+                guard span > 0.02 else { return raw }   // 差异太小就保留原值
+                return (raw - minValue) / span
+            }
+
+            var rescored: [SearchHit] = []
+            rescored.reserveCapacity(finalList.count)
+            for var hit in finalList {
+                guard let raw = raws[hit.design.index] else {
+                    rescored.append(hit)
+                    continue
+                }
+                let structure = normalized(raw)
                 hit.structureScore = structure
                 hit.score = 0.75 * hit.score + 0.25 * structure
                 rescored.append(hit)
