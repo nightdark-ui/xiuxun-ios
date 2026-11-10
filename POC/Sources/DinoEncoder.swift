@@ -56,6 +56,21 @@ final class DinoEncoder {
     /// 图库包里的 base 模型最小化 IPA 体积，也避免仓库塞 167MB。
     static func resolveModelURL(variant: Variant) -> URL? {
         let name = variant.rawValue
+        // 1) App 内置（IPA 里的那份，正常情况走这里）
+        if let bundled = Bundle.main.url(forResource: name, withExtension: "onnx") {
+            return bundled
+        }
+        // 2) 图库目录（手动放进 Documents/Gallery/models 时用）
+        if let documents = try? FileManager.default.url(
+            for: .documentDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: false
+        ) {
+            let candidate = documents
+                .appendingPathComponent("Gallery/models")
+                .appendingPathComponent(name + ".onnx")
+            if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+        }
+        // 3) 旧的 Application Support 位置（兼容早期装过的图库）
         if let support = try? FileManager.default.url(
             for: .applicationSupportDirectory, in: .userDomainMask,
             appropriateFor: nil, create: false
@@ -65,7 +80,7 @@ final class DinoEncoder {
                 .appendingPathComponent(name + ".onnx")
             if FileManager.default.fileExists(atPath: candidate.path) { return candidate }
         }
-        return Bundle.main.url(forResource: name, withExtension: "onnx")
+        return nil
     }
 
     /// 批量编码：每张图各自一份张量，返回每张的 (cls, patches)

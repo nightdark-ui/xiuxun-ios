@@ -50,9 +50,13 @@ enum GalleryVerifier {
             report.heavyOK = size > last.heavyOffset
         }
 
-        // base 模型
-        let modelURL = root.appendingPathComponent("models/dinov2-base-fp16.onnx")
-        report.baseModelOK = fileManager.fileExists(atPath: modelURL.path)
+        // base 模型：先看 App 内置（IPA 里），再看图库目录
+        if DinoEncoder.resolveModelURL(variant: .base) != nil {
+            report.baseModelOK = true
+        } else {
+            let local = root.appendingPathComponent("models/dinov2-base-fp16.onnx")
+            report.baseModelOK = fileManager.fileExists(atPath: local.path)
+        }
 
         // 图片 / 缩略图（抽样全量存在性检查，不打开文件）
         progress("校验图片…")
