@@ -1,10 +1,20 @@
-﻿#import "CVLocalMatcher.h"
-// 不能 import <opencv2/opencv.hpp>：它会把 stitching 头带进来，
-// 其中 enum { NO, ... } 与 Objective-C 的 NO 宏冲突。
+#import "CVLocalMatcher.h"
+// 不能 import <opencv2/opencv.hpp>：会把 stitching 头带进来，与 Objective-C 的 NO 宏冲突。
 #import <opencv2/core.hpp>
 #import <opencv2/imgproc.hpp>
 #import <opencv2/features2d.hpp>
 #import <opencv2/calib3d.hpp>
+
+@interface CVSiftFeatures : NSObject {
+@public
+    cv::Mat gray;
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+}
+@end
+
+@implementation CVSiftFeatures
+@end
 
 @implementation CVLocalMatcher
 
@@ -12,17 +22,12 @@
     return YES;
 }
 
-static cv::Mat matFromRGBA(NSData *data, NSInteger width, NSInteger height) {
-    if (data.length < (NSUInteger)(width * height * 4) || width <= 0 || height <= 0) {
-        return cv::Mat();
-    }
-    // RGBA -> BGRA（OpenCV 用 BGRA 顺序）
+static cv::Mat grayFromRGBA(NSData *data, NSInteger width, NSInteger height) {
+    if (width <= 0 || height <= 0) { return cv::Mat(); }
+    if (data.length < (NSUInteger)(width * height * 4)) { return cv::Mat(); }
     cv::Mat rgba((int)height, (int)width, CV_8UC4, (void *)data.bytes);
-    cv::Mat bgra;
-    cv::cvtColor(rgba, bgra, cv::COLOR_RGBA2BGRA);
     cv::Mat gray;
-    cv::cvtColor(bgra, gray, cv::COLOR_BGRA2GRAY);
-    // 控制计算量：长边缩到 800
+    cv::cvtColor(rgba, gray, cv::COLOR_RGBA2GRAY);
     const int maxSide = 800;
     int longest = std::max(gray.cols, gray.rows);
     if (longest > maxSide) {
@@ -33,58 +38,54 @@ static cv::Mat matFromRGBA(NSData *data, NSInteger width, NSInteger height) {
     return gray;
 }
 
-+ (double)matchQuery:(NSData *)queryRGBA
-              qWidth:(NSInteger)qWidth
-             qHeight:(NSInteger)qHeight
-          designRGBA:(NSData *)designRGBA
-             dWidth:(NSInteger)dWidth
-            dHeight:(NSInteger)dHeight {
-    @autoreleasepool {
-        cv::Mat q = matFromRGBA(queryRGBA, qWidth, qHeight);
-        cv::Mat d = matFromRGBA(designRGBA, dWidth, dHeight);
-        if (q.empty() || d.empty()) {
-            return 0.0;
-        }
-
-        cv::Ptr<cv::SIFT> sift = cv::SIFT::create(0, 3, 0.04, 10.0, 1.6);
-        std::vector<cv::KeyPoint> kpQ, kpD;
-        cv::Mat descQ, descD;
-        sift->detectAndCompute(q, cv::noArray(), kpQ, descQ);
-        sift->detectAndCompute(d, cv::noArray(), kpD, descD);
-        if (descQ.empty() || descD.empty() || kpQ.size() < 4 || kpD.size() < 4) {
-            return 0.0;
-        }
-
-        cv::BFMatcher matcher(cv::NORM_L2);
-        std::vector<std::vector<cv::DMatch>> knn;
-        matcher.knnMatch(descQ, descD, knn, 2);
-
-        std::vector<cv::Point2f> ptsQ, ptsD;
-        for (const auto &pair : knn) {
-            if (pair.size() < 2) { continue; }
-            if (pair[0].distance < 0.75f * pair[1].distance) {
-                ptsQ.push_back(kpQ[pair[0].queryIdx].pt);
-                ptsD.push_back(kpD[pair[0].trainIdx].pt);
-            }
-        }
-        if (ptsQ.size() < 6) {
-            return 0.0;
-        }
-
-        cv::Mat mask;
-        cv::Mat H = cv::findHomography(ptsQ, ptsD, cv::RANSAC, 5.0, mask);
-        if (H.empty() || mask.empty()) {
-            return 0.0;
-        }
-        int inliers = cv::countNonZero(mask);
-        double ratio = (double)inliers / (double)ptsQ.size();
-        double coverage = (double)inliers / (double)std::max<size_t>(kpQ.size(), 1);
-        // 内点比例 + 覆盖率（对照 PC 的打分思路）
-        double score = 0.65 * ratio + 0.35 * std::min(1.0, coverage * 2.0);
-        return std::max(0.0, std::min(1.0, score));
-    }
++ (CVSiftFeatures *)extractFeatures:(NSData *)rgba width:(NSInteger)width height:(NSInteger)height {
+    CVSiftFeatures *features = [[CVSiftFeatures alloc] init];
+    cv::Mat gray = grayFromRGBA(rgba, width, height);
+    if (gray.empty()) { return features; }
+    features->gray = gray;
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create(0, 3, 0.04, 10.0, 1.6);
+    sift->detectAndCompute(gray, cv::noArray(), features->keypoints, features->descriptors);
+    return features;
 }
 
+static double scoreFromMatches(
+    const std::vector<cv::KeyPoint> &queryKp,
+    const cv::Mat &queryDesc,
+    const cv::Mat &designDesc,
+    const std::vector<cv::KeyPoint> &designKp
+) {
+    if (queryDesc.empty() || designDesc.empty()) { return 0.0; }
+    if (queryKp.size() < 4 || designKp.size() < 4) { return 0.0; }
+
+    cv::BFMatcher matcher(cv::NORM_L2);
+    std::vector<std::vector<cv::DMatch>> knn;
+    matcher.knnMatch(queryDesc, designDesc, knn, 2);
+
+    std::vector<cv::Point2f> ptsQuery, ptsDesign;
+    for (const auto &pair : knn) {
+        if (pair.size() < 2) { continue; }
+        if (pair[0].distance < 0.75f * pair[1].distance) {
+            ptsQuery.push_back(queryKp[pair[0].queryIdx].pt);
+            ptsDesign.push_back(designKp[pair[0].trainIdx].pt);
+        }
+    }
+    if (ptsQuery.size() < 6) { return 0.0; }
+
+    cv::Mat mask;
+    cv::Mat homography = cv::findHomography(ptsQuery, ptsDesign, cv::RANSAC, 5.0, mask);
+    if (homography.empty() || mask.empty()) { return 0.0; }
+
+    int inliers = cv::countNonZero(mask);
+    double ratio = (double)inliers / (double)ptsQuery.size();
+    double coverage = (double)inliers / (double)std::max<size_t>(queryKp.size(), 1);
+    double score = 0.65 * ratio + 0.35 * std::min(1.0, coverage * 2.0);
+    return std::max(0.0, std::min(1.0, score));
+}
+
++ (double)matchFeatures:(CVSiftFeatures *)query against:(CVSiftFeatures *)design {
+    if (query == nil || design == nil) { return 0.0; }
+    return scoreFromMatches(query->keypoints, query->descriptors, design->descriptors, design->keypoints);
+}
 
 + (double)matchFeatures:(CVSiftFeatures *)query
         designKeypoints:(NSData *)keypoints
@@ -103,30 +104,20 @@ static cv::Mat matFromRGBA(NSData *data, NSInteger width, NSInteger height) {
         const float *row = kpData + i * 5;
         designKp.emplace_back(cv::Point2f(row[0], row[1]), row[2], row[3], row[4]);
     }
+    return scoreFromMatches(query->keypoints, query->descriptors, descMat, designKp);
+}
 
-    cv::BFMatcher matcher(cv::NORM_L2);
-    std::vector<std::vector<cv::DMatch>> knn;
-    matcher.knnMatch(query->descriptors, descMat, knn, 2);
-
-    std::vector<cv::Point2f> ptsQuery, ptsDesign;
-    for (const auto &pair : knn) {
-        if (pair.size() < 2) { continue; }
-        if (pair[0].distance < 0.75f * pair[1].distance) {
-            ptsQuery.push_back(query->keypoints[pair[0].queryIdx].pt);
-            ptsDesign.push_back(designKp[pair[0].trainIdx].pt);
-        }
++ (double)matchQuery:(NSData *)queryRGBA
+              qWidth:(NSInteger)qWidth
+             qHeight:(NSInteger)qHeight
+          designRGBA:(NSData *)designRGBA
+             dWidth:(NSInteger)dWidth
+            dHeight:(NSInteger)dHeight {
+    @autoreleasepool {
+        CVSiftFeatures *q = [self extractFeatures:queryRGBA width:qWidth height:qHeight];
+        CVSiftFeatures *d = [self extractFeatures:designRGBA width:dWidth height:dHeight];
+        return [self matchFeatures:q against:d];
     }
-    if (ptsQuery.size() < 6) { return 0.0; }
-
-    cv::Mat mask;
-    cv::Mat homography = cv::findHomography(ptsQuery, ptsDesign, cv::RANSAC, 5.0, mask);
-    if (homography.empty() || mask.empty()) { return 0.0; }
-
-    int inliers = cv::countNonZero(mask);
-    double ratio = (double)inliers / (double)ptsQuery.size();
-    double coverage = (double)inliers / (double)std::max<size_t>(query->keypoints.size(), 1);
-    double score = 0.65 * ratio + 0.35 * std::min(1.0, coverage * 2.0);
-    return std::max(0.0, std::min(1.0, score));
 }
 
 @end

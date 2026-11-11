@@ -1,17 +1,25 @@
-﻿#import <Foundation/Foundation.h>
+#import <Foundation/Foundation.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// SIFT + 单应验证的局部匹配（Objective-C++ 封装，Swift 通过桥接头调用）。
-///
-/// 对应 PC `matching.py` 的 local_match：SIFT 关键点 → 比值检验 → RANSAC 单应。
+/// 预先提取好的 SIFT 特征
+@interface CVSiftFeatures : NSObject
+@end
+
 @interface CVLocalMatcher : NSObject
 
-/// 两张图的局部匹配度
-/// - Parameters:
-///   - queryRGBA: 查询图 RGBA8 原始字节
-///   - designRGBA: 图库图 RGBA8 原始字节
-/// - Returns: 0…1；无法匹配返回 0
++ (nullable CVSiftFeatures *)extractFeatures:(NSData *)rgba
+                                      width:(NSInteger)width
+                                     height:(NSInteger)height;
+
++ (double)matchFeatures:(CVSiftFeatures *)query
+                against:(CVSiftFeatures *)design;
+
+/// 用 heavy.bin 里缓存的 SIFT 特征匹配（不解码、不检测设计图）
++ (double)matchFeatures:(CVSiftFeatures *)query
+        designKeypoints:(NSData *)keypoints
+      designDescriptors:(NSData *)descriptors;
+
 + (double)matchQuery:(NSData *)queryRGBA
               qWidth:(NSInteger)qWidth
              qHeight:(NSInteger)qHeight
@@ -19,7 +27,6 @@ NS_ASSUME_NONNULL_BEGIN
              dWidth:(NSInteger)dWidth
             dHeight:(NSInteger)dHeight;
 
-/// 自检：OpenCV 是否成功链接
 + (BOOL)isAvailable;
 
 @end

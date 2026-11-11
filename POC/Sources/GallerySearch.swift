@@ -408,6 +408,7 @@ final class GallerySearch {
             }
         }
 
+        let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
         var scored: [SearchHit] = []
         scored.reserveCapacity(finalList.count)
         for var hit in finalList {
