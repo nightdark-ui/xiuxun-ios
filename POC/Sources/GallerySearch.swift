@@ -136,7 +136,7 @@ final class GallerySearch {
             progress("细粒度比对…")
             // 只用 8 个旋转的整图行，控制计算量
             let queryRows = Array(query.clsRows.prefix(8))
-            for index in 0..<count {
+            for index in 0..<package.designs.count {
                 let design = package.designs[index]
                 guard let features = heavy.features(at: design.heavyOffset) else { continue }
                 var best = 0.0
