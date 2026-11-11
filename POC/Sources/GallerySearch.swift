@@ -72,7 +72,8 @@ final class GallerySearch {
         // PC 的查询预处理：make_canonical(512, 5.5% 留白) → 灰度 → CLAHE
         var workingGray = enhancedGray
         if let image = queryImage {
-            let canonical = PCImaging.makeCanonical(image, autoCrop: options.autoCrop)
+            // 暂时停用自动裁切：我们的 bbox 算法与 PC 不同，灰底照片会裁错
+            let canonical = PCImaging.makeCanonical(image, autoCrop: false)
             if let gray = PCImaging.grayImage(fromRGB: canonical.pixels, side: canonical.side) {
                 let equalized = Clahe.apply(
                     gray.pixels,
