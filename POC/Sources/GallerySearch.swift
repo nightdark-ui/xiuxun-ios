@@ -83,8 +83,8 @@ final class GallerySearch {
                outWidth: &canonicalWidth,
                outHeight: &canonicalHeight
            ),
-           let gray = CVImaging.claheGrayFromRGBA(
-               canonical,
+           let gray = CVImaging.claheGray(
+               fromRGBA: canonical,
                width: 512,
                height: 512
            ) {
