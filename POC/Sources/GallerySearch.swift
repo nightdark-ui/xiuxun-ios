@@ -400,7 +400,7 @@ final class GallerySearch {
                       !features.siftDescriptors.isEmpty else { continue }
                 let descData = features.siftDescriptors.withUnsafeBufferPointer { Data(buffer: $0) }
                 let kpData = features.siftKeypoints.withUnsafeBufferPointer { Data(buffer: $0) }
-                siftScores[item.index] = CVLocalMatcher.matchFeatures(
+                siftScores[item.index] = CVLocalMatcher.match(
                     queryFeatures,
                     designKeypoints: kpData,
                     designDescriptors: descData
