@@ -69,8 +69,28 @@ final class GallerySearch {
         let originalData = Data(
             (0..<(enhancedGray.width * enhancedGray.height)).map { enhancedGray.pixels[$0] }
         )
+        // PC 的查询预处理：make_canonical(512, 5.5% 留白) → 灰度 → CLAHE
+        var workingGray = enhancedGray
+        if let image = queryImage {
+            let canonical = PCImaging.makeCanonical(image, autoCrop: options.autoCrop)
+            if let gray = PCImaging.grayImage(fromRGB: canonical.pixels, side: canonical.side) {
+                let equalized = Clahe.apply(
+                    gray.pixels,
+                    width: gray.width,
+                    height: gray.height,
+                    clipLimit: 2.0,
+                    tiles: 8
+                )
+                workingGray = PilImaging.GrayImage(
+                    width: gray.width,
+                    height: gray.height,
+                    pixels: equalized
+                )
+            }
+        }
+
         let query = try encoder.encode(
-            enhancedGray: enhancedGray,
+            enhancedGray: workingGray,
             options: options,
             originalData: originalData
         )
@@ -83,7 +103,7 @@ final class GallerySearch {
         let useLibraryFilter = !allowedLibraries.isEmpty
 
         // PC 的 base CLS 全库召回通道（768 维，判别力强于 small 的 384）
-        let queryBaseVector: [Float]? = try? encoder.encodeBase(enhancedGray: enhancedGray, size: options.baseInputSize)
+        let queryBaseVector: [Float]? = try? encoder.encodeBase(enhancedGray: workingGray, size: options.baseInputSize)
 
         var candidates: [(index: Int, cls: Double, tile: Double, fraction: Double)] = []
         var baseSims: [Int: Double] = [:]
@@ -270,7 +290,7 @@ final class GallerySearch {
         if ranked.count > 1 {
             progress("base 重排…")
             let baseStart = Date()
-            if let baseQuery = try? encoder.encodeBase(enhancedGray: enhancedGray, size: baseSize) {
+            if let baseQuery = try? encoder.encodeBase(enhancedGray: workingGray, size: baseSize) {
                 let topForBase = Array(ranked.prefix(baseLimit))
                 package.withRecallPointer { base, _ in
                     for item in topForBase {
@@ -353,82 +373,100 @@ final class GallerySearch {
             note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
         }
 
-        // 结构分（PC 的 old_score 那 25%）：edge 相关 + Hu 矩 + 统计量
-        if let heavy = heavy, options.deepReview || true {
-            let structureStart = Date()
-            let queryDescriptor = StructureScore.describe(enhancedGray)
-            let descriptorMs = Date().timeIntervalSince(structureStart) * 1000
-            note += note.isEmpty ? String(format: "特征计算 %.0fms", descriptorMs) : String(format: "；特征计算 %.0fms", descriptorMs)
-            // 先算原始结构分
-            var raws: [Int: Double] = [:]
-            for hit in finalList {
-                guard let features = heavy.features(at: hit.design.heavyOffset) else { continue }
-                raws[hit.design.index] = StructureScore.structure(
-                    query: queryDescriptor,
-                    designEdge: features.edge,
-                    designFm: features.fm,
-                    designHu: features.hu,
-                    designStats: features.stats
-                )
-            }
-            // 与 PC 一致：直接用绝对结构分（0…1），不做名次归一化
-            func normalized(_ raw: Double) -> Double { raw }
+        // ---------- PC final_score：old_score(7项) + aiComponent 归一化 ----------
+        let queryDescriptor = PCScore.describe(workingGray)
+        let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
 
-            var rescored: [SearchHit] = []
-            rescored.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                guard let raw = raws[hit.design.index] else {
-                    rescored.append(hit)
-                    continue
+        // SIFT：8 个旋转变体（P1），特征只提取一次，6 核并行
+        var siftScores: [Int: Double] = [:]
+        if let queryImage = queryImage {
+            let angles: [Int] = options.rotationEnabled
+                ? [0, 45, 90, 135, 180, 225, 270, 315]
+                : [0]
+            var queryFeatures: [CVSiftFeatures] = []
+            for angle in angles {
+                let rotated = angle == 0 ? queryImage : ImageOps.rotateUIImage(queryImage, degrees: angle)
+                if let bytes = ImageOps.rgbaBytes(rotated),
+                   let features = CVLocalMatcher.extractFeatures(
+                       bytes.data, width: bytes.width, height: bytes.height
+                   ) {
+                    queryFeatures.append(features)
                 }
-                let structure = normalized(raw)
-                hit.structureScore = structure
-                hit.score = 0.75 * (hit.aiScore) + 0.25 * structure
-                rescored.append(hit)
             }
-            finalList = rescored.sorted { $0.score > $1.score }
-            timings.baseMs += Date().timeIntervalSince(structureStart) * 1000
-            note += note.isEmpty
-                ? "已应用结构分"
-                : "；已应用结构分"
+            if options.mirrorEnabled,
+               let bytes = ImageOps.rgbaBytes(queryImage.withHorizontallyFlippedOrientation()),
+               let features = CVLocalMatcher.extractFeatures(
+                   bytes.data, width: bytes.width, height: bytes.height
+               ) {
+                queryFeatures.append(features)
+            }
+
+            let candidates = Array(ranked.prefix(30))
+            if !queryFeatures.isEmpty && !candidates.isEmpty {
+                let indices = candidates.map { $0.index }
+                let results = UnsafeMutablePointer<Double>.allocate(capacity: indices.count)
+                results.initialize(repeating: 0, count: indices.count)
+                let featuresPtr = UnsafeMutablePointer<CVSiftFeatures>(mutating: queryFeatures)
+                DispatchQueue.concurrentPerform(iterations: indices.count) { slot in
+                    let index = indices[slot]
+                    let design = package.designs[index]
+                    autoreleasepool {
+                        guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
+                              let designBytes = ImageOps.rgbaBytes(image),
+                              let designFeatures = CVLocalMatcher.extractFeatures(
+                                  designBytes.data,
+                                  width: designBytes.width,
+                                  height: designBytes.height
+                              ) else { return }
+                        var best = 0.0
+                        for offset in 0..<queryFeatures.count {
+                            let value = CVLocalMatcher.matchFeatures(
+                                featuresPtr.advanced(by: offset).pointee,
+                                against: designFeatures
+                            )
+                            if value > best { best = value }
+                        }
+                        results[slot] = best
+                    }
+                }
+                for (slot, index) in indices.enumerated() {
+                    siftScores[index] = results[slot]
+                }
+                results.deallocate()
+            }
         }
 
-        // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
-        if let queryImage = queryImage,
-           let queryBytes = ImageOps.rgbaBytes(queryImage) {
-            let siftStart = Date()
-            let topForSift = Array(ranked.prefix(30))
-            var localScores: [Int: Double] = [:]
-            for item in topForSift {
-                let design = package.designs[item.index]
-                autoreleasepool {
-                    guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
-                          let designBytes = ImageOps.rgbaBytes(image) else { return }
-                    localScores[item.index] = CVLocalMatcher.matchQuery(
-                        queryBytes.data,
-                        qWidth: queryBytes.width,
-                        qHeight: queryBytes.height,
-                        designRGBA: designBytes.data,
-                        dWidth: designBytes.width,
-                        dHeight: designBytes.height
-                    )
-                }
+        var scored: [SearchHit] = []
+        scored.reserveCapacity(finalList.count)
+        for var hit in finalList {
+            let index = hit.design.index
+            guard let features = heavy?.features(at: hit.design.heavyOffset) else {
+                scored.append(hit)
+                continue
             }
-            timings.baseMs += Date().timeIntervalSince(siftStart) * 1000
-            // 把 SIFT 分数接进排序（PC: old_score 里含 local 分量）
-            var adjusted = finalList
-            for index in 0..<adjusted.count {
-                let designIndex = adjusted[index].design.index
-                if let local = localScores[designIndex] {
-                    adjusted[index].score = 0.70 * adjusted[index].score + 0.30 * local
-                }
+            let rotation = PCScore.bestRotation(
+                query: queryDescriptor,
+                design: features,
+                allowRotation: options.rotationEnabled
+            )
+            let sims = rotation.sims
+            let edge = rotation.edge
+            let local = siftScores[index] ?? 0
+            let old = PCScore.oldScore(local: local, edge: edge, sims: sims)
+
+            // aiComponent + base 混合 + 参考学习替换（PC 977-1004 行）
+            var aiComp = PCScore.aiComponent(hit.aiScore)
+            if hit.baseScore > 0 {
+                aiComp = 0.70 * aiComp + 0.30 * PCScore.aiComponent(hit.baseScore)
             }
-            finalList = adjusted.sorted { $0.score > $1.score }
-            let siftHits = localScores.values.filter { $0 > 0.3 }.count
-            note += note.isEmpty
-                ? "已 SIFT 精排（\(siftHits) 款强匹配）"
-                : "；已 SIFT 精排（\(siftHits) 款强匹配）"
+            if let ref = refMap[hit.design.featureUUID], ref >= 0.9 {
+                aiComp = PCScore.aiComponent(ref)
+            }
+            hit.structureScore = old
+            hit.score = min(0.995, max(0, 0.75 * aiComp + 0.25 * old))
+            scored.append(hit)
         }
+        finalList = scored.sorted { $0.score > $1.score }
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }

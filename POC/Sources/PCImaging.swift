@@ -48,6 +48,19 @@ enum PCImaging {
         return (resized, canonicalSize)
     }
 
+    /// RGB 缓冲 → 灰度图（PIL 的 L 通道公式）
+    static func grayImage(fromRGB rgb: [UInt8], side: Int) -> PilImaging.GrayImage? {
+        guard rgb.count >= side * side * 3 else { return nil }
+        var pixels = [UInt8](repeating: 0, count: side * side)
+        for i in 0..<(side * side) {
+            let r = Double(rgb[i * 3])
+            let g = Double(rgb[i * 3 + 1])
+            let b = Double(rgb[i * 3 + 2])
+            pixels[i] = UInt8(min(255, max(0, 0.299 * r + 0.587 * g + 0.114 * b)))
+        }
+        return PilImaging.GrayImage(width: side, height: side, pixels: pixels)
+    }
+
     // MARK: - 结构图
 
     /// PC `structure_map`：颜色无关的线条图（512×512）

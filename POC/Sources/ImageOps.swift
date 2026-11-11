@@ -155,6 +155,24 @@ enum ImageOps {
         return PilImaging.GrayImage(width: cropW, height: cropH, pixels: output)
     }
 
+    /// 按角度旋转 UIImage（给 SIFT 多旋转变体用）
+    static func rotateUIImage(_ image: UIImage, degrees: Int) -> UIImage {
+        let radians = CGFloat(degrees) * .pi / 180
+        let width = image.size.width
+        let height = image.size.height
+        let rotatedSize = CGRect(origin: .zero, size: CGSize(width: width, height: height))
+            .applying(CGAffineTransform(rotationAngle: radians)).size
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: rotatedSize, format: format)
+        return renderer.image { context in
+            let cg = context.cgContext
+            cg.translateBy(x: rotatedSize.width / 2, y: rotatedSize.height / 2)
+            cg.rotate(by: radians)
+            image.draw(in: CGRect(x: -width / 2, y: -height / 2, width: width, height: height))
+        }
+    }
+
     /// 导出 RGBA8 字节（给 OpenCV 用）
     static func rgbaBytes(_ image: UIImage, maxSide: Int = 900) -> (data: Data, width: Int, height: Int)? {
         guard let cg = image.cgImage else { return nil }
