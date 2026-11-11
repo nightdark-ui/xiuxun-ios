@@ -17,9 +17,10 @@ enum PCGlobal {
     }
 
     static func describe(structure: [UInt8], side: Int) -> Descriptor {
-        let edge = resizeArea(structure, from: side, to: edgeSide)
+        let edgeBytes = resizeArea(structure, from: side, to: edgeSide)
+        let edge = edgeBytes.map { Float($0) }
         return Descriptor(
-            edge: edge.map { Float($0) },
+            edge: edge,
             fm: fourierMellin(structure, side: side),
             lbp: textureHistograms(structure, side: side),
             ori: orientationSignature(edge),
