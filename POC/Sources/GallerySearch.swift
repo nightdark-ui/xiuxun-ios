@@ -1,5 +1,6 @@
 ﻿import UIKit
 import Foundation
+import Accelerate
 
 /// 一条搜索结果
 struct SearchHit {
@@ -473,20 +474,20 @@ final class GallerySearch {
         var best = -1.0
         var bestRow = 0
         for row in queryRows {
+            var queryNorm: Float = 0
+            vDSP_svesq(row, 1, &queryNorm, vDSP_Length(dim))
+            let normQ = Double(queryNorm).squareRoot()
             for r in 0..<rows {
                 let pointer = target.advanced(by: r * dim)
-                var dot = 0.0
-                var normQ = 0.0
-                var normT = 0.0
-                for i in 0..<dim {
-                    let q = Double(row[i])
-                    let tv = Double(pointer[i])
-                    dot += q * tv
-                    normQ += q * q
-                    normT += tv * tv
+                var dot: Float = 0
+                vDSP_dotpr(row, 1, pointer, 1, &dot, vDSP_Length(dim))
+                var targetNorm: Float = 0
+                vDSP_svesq(pointer, 1, &targetNorm, vDSP_Length(dim))
+                let value = Double(dot) / max(1e-9, normQ * Double(targetNorm).squareRoot())
+                if value > best {
+                    best = value
+                    bestRow = r
                 }
-                let value = dot / max(1e-9, sqrt(normQ) * sqrt(normT))
-                if value > best { best = value; bestRow = r }
             }
         }
         return (max(0, best), bestRow)
