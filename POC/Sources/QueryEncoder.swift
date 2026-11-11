@@ -29,6 +29,8 @@ struct SearchOptions {
     var localFirst: Bool = false
     /// 0 精准 / 1 均衡 / 2 宽松
     var strictness: Int = 1
+    /// 诊断：指定款号，搜索后在备注里输出它的排名与分数
+    var diagnosticCode: String = ""
     var codeFrom: String = ""
     var codeTo: String = ""
 }

@@ -18,6 +18,7 @@ final class AppSettings: ObservableObject {
     @Published var base336: Bool {
         didSet { UserDefaults.standard.set(base336, forKey: "set.base336") }
     }
+    @Published var diagnosticCode: String = ""
     @Published var allowRepeat: Bool {
         didSet { UserDefaults.standard.set(allowRepeat, forKey: "set.allowRepeat") }
     }
@@ -69,6 +70,7 @@ final class AppSettings: ObservableObject {
         options.resultCount = resultCount
         options.baseInputSize = base336 ? 336 : 224
         options.selectedLibraries = libraryFilter
+        options.diagnosticCode = diagnosticCode
         options.allowRepeat = allowRepeat
         options.autoCrop = autoCrop
         options.localFirst = localFirst
@@ -123,6 +125,7 @@ struct SettingsView: View {
                 Text("结果")
             }
 
+            DiagnoseSection()
             GalleryLocationSection()
             LearningSection()
 
@@ -263,4 +266,20 @@ struct GalleryLocationSection: View {
 
 extension Notification.Name {
     static let galleryRootChanged = Notification.Name("galleryRootChanged")
+}
+
+
+/// 诊断：输入款号，搜索时输出该款在召回/最终排序中的位置
+struct DiagnoseSection: View {
+    @EnvironmentObject private var settings: AppSettings
+
+    var body: some View {
+        AppCard {
+            CardHeader(title: "诊断")
+            TextField("输入款号，如 10464", text: $settings.diagnosticCode)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+            Hint(text: "填了款号后，搜索结果备注里会显示该款的召回排名/最终排名和各项分数；留空即关闭")
+        }
+    }
 }

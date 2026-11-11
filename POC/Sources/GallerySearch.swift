@@ -382,6 +382,25 @@ final class GallerySearch {
             note += note.isEmpty ? "已启用轮廓匹配" : "；已启用轮廓匹配"
         }
 
+        // 诊断：指定款号在召回/最终排序中的位置
+        if !options.diagnosticCode.isEmpty {
+            let target = options.diagnosticCode.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let designIndex = package.designs.firstIndex(where: { $0.code == target }) {
+                let recallRank = (ranked.firstIndex(where: { $0.index == designIndex }) ?? -1) + 1
+                let finalRank = (finalList.firstIndex(where: { $0.design.index == designIndex }) ?? -1) + 1
+                let item = ranked.first(where: { $0.index == designIndex })
+                let fine = fineTiles[designIndex] ?? 0
+                let line = String(
+                    format: "诊断 %@：召回第%d / 最终第%d，CLS %.3f tile %.3f 细tile %.3f",
+                    target, recallRank, finalRank,
+                    item?.cls ?? 0, item?.tile ?? 0, fine
+                )
+                note += note.isEmpty ? line : "；" + line
+            } else {
+                note += note.isEmpty ? "诊断：未找到款号 \(target)" : "；诊断：未找到款号 \(target)"
+            }
+        }
+
         // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
         if let queryImage = queryImage,
            let queryBytes = ImageOps.rgbaBytes(queryImage) {
