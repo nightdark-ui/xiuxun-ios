@@ -40,7 +40,7 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: c++17
     dependencies:
       - framework: Vendor/opencv2.framework
-        embed: true
+        embed: false
 
 # CI needs a SHARED scheme, otherwise "xcodebuild -scheme XiuxunPOC" fails
 # immediately with exit code 65 ("does not contain a scheme named ...").
