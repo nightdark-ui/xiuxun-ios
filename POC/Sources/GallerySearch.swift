@@ -330,7 +330,8 @@ final class GallerySearch {
         // 候选池：深度复核扩到 100，否则 60（与 PC 一致）
         let poolLimit = options.deepReview ? 100 : 60
         let baseLimit = poolLimit
-        let baseSize = options.deepReview ? 336 : options.baseInputSize
+        // 普通搜索用 224（快），深度复试用 336（更准）
+        let baseSize = options.deepReview ? 336 : 224
         var baseScores: [Int: Double] = [:]
         if ranked.count > 1 {
             progress("base 重排…")
@@ -381,34 +382,32 @@ final class GallerySearch {
         }
         let globalQuery = PCGlobal.describe(structure: structureBytes, side: 512)
 
-        // SIFT：对前 60 名候选算一次（PC 的 local 分量）
+        // SIFT：查询只算一次；设计侧直接读 heavy.bin 里缓存的 kp/desc（不解码、不检测）
         var siftScores: [Int: Double] = [:]
-        let siftQuery: UIImage? = {
-            if let canonical = canonicalBytes {
-                return ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512)
-            }
-            return queryImage
-        }()
-        if let siftQuery = siftQuery, let queryBytes = ImageOps.rgbaBytes(siftQuery) {
+        if let canonical = canonicalBytes,
+           let queryImage512 = ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512),
+           let queryBytes = ImageOps.rgbaBytes(queryImage512),
+           let queryFeatures = CVLocalMatcher.extractFeatures(
+               queryBytes.data,
+               width: queryBytes.width,
+               height: queryBytes.height
+           ),
+           let heavy = heavy {
             let topForSift = Array(ranked.prefix(poolLimit))
             for item in topForSift {
                 let design = package.designs[item.index]
-                autoreleasepool {
-                    guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
-                          let designBytes = ImageOps.rgbaBytes(image) else { return }
-                    siftScores[item.index] = CVLocalMatcher.matchQuery(
-                        queryBytes.data,
-                        qWidth: queryBytes.width,
-                        qHeight: queryBytes.height,
-                        designRGBA: designBytes.data,
-                        dWidth: designBytes.width,
-                        dHeight: designBytes.height
-                    )
-                }
+                guard let features = heavy.features(at: design.heavyOffset),
+                      !features.siftDescriptors.isEmpty else { continue }
+                let descData = features.siftDescriptors.withUnsafeBufferPointer { Data(buffer: $0) }
+                let kpData = features.siftKeypoints.withUnsafeBufferPointer { Data(buffer: $0) }
+                siftScores[item.index] = CVLocalMatcher.matchFeatures(
+                    queryFeatures,
+                    designKeypoints: kpData,
+                    designDescriptors: descData
+                )
             }
         }
 
-        let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
         var scored: [SearchHit] = []
         scored.reserveCapacity(finalList.count)
         for var hit in finalList {

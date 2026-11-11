@@ -32,6 +32,8 @@ final class HeavyStore {
         var radial: [Float]
         var hu: [Float]
         var stats: [Float]
+        var siftKeypoints: [Float] = []
+        var siftDescriptors: [Float] = []
     }
 
     private let data: Data
@@ -79,6 +81,28 @@ final class HeavyStore {
             result.radial = take(Self.radialCount)
             result.hu = take(Self.huCount)
             result.stats = take(Self.statsCount)
+
+            // SIFT：siftCount(int32) + kp[count×5] + desc[count×128]
+            let siftCountOffset = Int(offset) + Self.headerFloats * 4
+            if siftCountOffset + 4 <= data.count {
+                let count = Int(data.withUnsafeBytes { raw -> Int32 in
+                    raw.baseAddress!.advanced(by: siftCountOffset).assumingMemoryBound(to: Int32.self).pointee
+                })
+                if count > 0, count < 20000 {
+                    let valueStart = siftCountOffset + 4
+                    let kpBytes = count * 5 * 4
+                    let descBytes = count * 128 * 4
+                    if valueStart + kpBytes + descBytes <= data.count {
+                        data.withUnsafeBytes { raw in
+                            guard let fbase = raw.baseAddress else { return }
+                            let kpPointer = fbase.advanced(by: valueStart).assumingMemoryBound(to: Float.self)
+                            result.siftKeypoints = Array(UnsafeBufferPointer(start: kpPointer, count: count * 5))
+                            let descPointer = fbase.advanced(by: valueStart + kpBytes).assumingMemoryBound(to: Float.self)
+                            result.siftDescriptors = Array(UnsafeBufferPointer(start: descPointer, count: count * 128))
+                        }
+                    }
+                }
+            }
         }
 
         lock.lock()

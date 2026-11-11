@@ -85,4 +85,48 @@ static cv::Mat matFromRGBA(NSData *data, NSInteger width, NSInteger height) {
     }
 }
 
+
++ (double)matchFeatures:(CVSiftFeatures *)query
+        designKeypoints:(NSData *)keypoints
+      designDescriptors:(NSData *)descriptors {
+    if (query == nil || keypoints.length < 20 || descriptors.length < 128 * 4) { return 0.0; }
+    if (query->descriptors.empty() || query->keypoints.size() < 4) { return 0.0; }
+
+    const size_t count = descriptors.length / (128 * sizeof(float));
+    if (count < 4 || keypoints.length < count * 5 * sizeof(float)) { return 0.0; }
+
+    cv::Mat descMat((int)count, 128, CV_32F, (void *)descriptors.bytes);
+    const float *kpData = (const float *)keypoints.bytes;
+    std::vector<cv::KeyPoint> designKp;
+    designKp.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const float *row = kpData + i * 5;
+        designKp.emplace_back(cv::Point2f(row[0], row[1]), row[2], row[3], row[4]);
+    }
+
+    cv::BFMatcher matcher(cv::NORM_L2);
+    std::vector<std::vector<cv::DMatch>> knn;
+    matcher.knnMatch(query->descriptors, descMat, knn, 2);
+
+    std::vector<cv::Point2f> ptsQuery, ptsDesign;
+    for (const auto &pair : knn) {
+        if (pair.size() < 2) { continue; }
+        if (pair[0].distance < 0.75f * pair[1].distance) {
+            ptsQuery.push_back(query->keypoints[pair[0].queryIdx].pt);
+            ptsDesign.push_back(designKp[pair[0].trainIdx].pt);
+        }
+    }
+    if (ptsQuery.size() < 6) { return 0.0; }
+
+    cv::Mat mask;
+    cv::Mat homography = cv::findHomography(ptsQuery, ptsDesign, cv::RANSAC, 5.0, mask);
+    if (homography.empty() || mask.empty()) { return 0.0; }
+
+    int inliers = cv::countNonZero(mask);
+    double ratio = (double)inliers / (double)ptsQuery.size();
+    double coverage = (double)inliers / (double)std::max<size_t>(query->keypoints.size(), 1);
+    double score = 0.65 * ratio + 0.35 * std::min(1.0, coverage * 2.0);
+    return std::max(0.0, std::min(1.0, score));
+}
+
 @end
