@@ -130,7 +130,7 @@ final class GallerySearch {
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
-        var ranked = candidates.sorted { Self.combined($0.cls, $0.tile) > Self.combined($1.cls, $1.tile) }
+        var ranked = candidates.sorted { max($0.cls, $0.tile) > max($1.cls, $1.tile) }
         if let top = ranked.first {
             let topDesign = package.designs[top.index]
             let topScore = Self.combined(top.cls, top.tile)
