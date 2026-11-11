@@ -155,7 +155,6 @@ struct LearningSection: View {
                     .foregroundColor(.secondary)
             }
 
-            Button("导入学习包（.zip）") { importing = true }
             Button("导出学习包") { doExport() }
                 .disabled(LearningStore.shared.totalSamples == 0)
             if !message.isEmpty {
@@ -164,7 +163,7 @@ struct LearningSection: View {
         } header: {
             Text("参考学习")
         } footer: {
-            Text("导入后，命中的款会按 85% AI 分 + 15% 学习分重排；没有样本的款不受影响。")
+            Text("参考学习已内置 \(LearningStore.shared.bundledCount) 条样本；命中时按 max(AI, 学习分) 抬升，不降权。")
                 .font(.caption2)
         }
         .fileImporter(

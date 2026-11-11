@@ -209,6 +209,18 @@ final class GallerySearch {
                     }
                 }
             }
+            // 参考学习（内置包）：命中则抬升，不降权
+            let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
+            if !refMap.isEmpty {
+                for item in ranked {
+                    let uuid = package.designs[item.index].featureUUID
+                    if let ref = refMap[uuid], ref > 0.55 {
+                        let boosted = max(aiScores[item.index] ?? 0, ref)
+                        aiScores[item.index] = boosted
+                    }
+                }
+            }
+
             // PC: base_score = 0.20*cls + 0.80*dense（没有 dense 时取 cls）
             //     ai_combined = 0.65*base_score + 0.35*tile
             for item in ranked {

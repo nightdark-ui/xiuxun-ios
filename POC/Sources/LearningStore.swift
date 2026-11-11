@@ -37,6 +37,105 @@ final class LearningStore {
 
     // MARK: - 存取
 
+
+    /// 内置学习包（构建时打进 IPA 的 learning.bin）
+    private var bundled: [ReferenceSample] = []
+    private var bundledLoaded = false
+    private var bundledIndex: [String: [ReferenceSample]] = [:]
+
+    /// 读取 Resources/learning.bin（格式 LRN1）
+    func loadBundled() {
+        guard !bundledLoaded else { return }
+        bundledLoaded = true
+        guard let url = Bundle.main.url(forResource: "learning", withExtension: "bin"),
+              let data = try? Data(contentsOf: url) else { return }
+
+        var offset = 0
+        func readInt() -> Int32? {
+            guard offset + 4 <= data.count else { return nil }
+            let value = data.withUnsafeBytes { $0.load(fromByteOffset: offset, as: Int32.self) }
+            offset += 4
+            return value
+        }
+        guard data.count > 8,
+              String(data: data.prefix(4), encoding: .ascii) == "LRN1" else { return }
+        offset = 4
+        guard let rawCount = readInt() else { return }
+        let count = Int(rawCount)
+        let floatCount = 10 * 384 + 9 * 384
+
+        for index in 0..<count {
+            guard let rawLen = readInt(), rawLen > 0, rawLen < 256,
+                  offset + Int(rawLen) <= data.count else { break }
+            let uuid = String(
+                data: data.subdata(in: offset..<(offset + Int(rawLen))),
+                encoding: .utf8
+            ) ?? ""
+            offset += Int(rawLen)
+            let byteCount = floatCount * 4
+            guard offset + byteCount <= data.count else { break }
+            let floats = data.withUnsafeBytes { buffer -> [Float] in
+                let pointer = buffer.baseAddress!.advanced(by: offset).assumingMemoryBound(to: Float.self)
+                return Array(UnsafeBufferPointer(start: pointer, count: floatCount))
+            }
+            offset += byteCount
+            let sample = ReferenceSample(
+                featureUUID: uuid,
+                sampleID: "bundled-\(index)",
+                cls: Array(floats[0..<(10 * 384)]),
+                tiles: Array(floats[(10 * 384)..<floatCount])
+            )
+            bundled.append(sample)
+        }
+        rebuildBundledIndex()
+    }
+
+    private func rebuildBundledIndex() {
+        bundledIndex = [:]
+        for sample in bundled {
+            bundledIndex[sample.featureUUID, default: []].append(sample)
+        }
+    }
+
+    var bundledCount: Int {
+        if !bundledLoaded { loadBundled() }
+        return bundled.count
+    }
+
+    /// 查询图与内置样本的最大余弦（按款 uuid 汇总）
+    func bundledBoostMap(queryRows: [[Float]]) -> [String: Double] {
+        if !bundledLoaded { loadBundled() }
+        guard !bundled.isEmpty, !queryRows.isEmpty else { return [:] }
+        var result: [String: Double] = [:]
+        for sample in bundled {
+            let rows = sample.clsRows
+            guard rows > 0 else { continue }
+            var best = 0.0
+            for q in queryRows {
+                for r in 0..<rows {
+                    let offset = r * 384
+                    var dot = 0.0
+                    var nq = 0.0
+                    var nt = 0.0
+                    for i in 0..<384 {
+                        let qv = Double(q[i])
+                        let tv = Double(sample.cls[offset + i])
+                        dot += qv * tv
+                        nq += qv * qv
+                        nt += tv * tv
+                    }
+                    let value = dot / max(1e-9, (nq * nt).squareRoot())
+                    if value > best { best = value }
+                    if best > 0.999 { break }
+                }
+            }
+            if best > (result[sample.featureUUID] ?? 0) {
+                result[sample.featureUUID] = best
+            }
+        }
+        return result
+    }
+
     func load() {
         queue.sync {
             guard let data = try? Data(contentsOf: storeURL),
