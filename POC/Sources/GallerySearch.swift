@@ -178,58 +178,62 @@ final class GallerySearch {
 
         if shouldCancel() { throw InstallError.cancelled }
 
-        // ---------- 2.5 dense 局部匹配 + ai_combined（严格按 PC 公式） ----------
+        // ---------- 2.5 两阶段召回：高分候选全部用 tiles5 dense 精筛 ----------
         var aiScores: [Int: Double] = [:]
         do {
             progress("局部匹配…")
             let denseStart = Date()
-            let topForDense = Array(ranked.prefix(60))
-            var denseMap: [Int: Double] = [:]
-            if !query.patchRows.isEmpty {
-                // PC 的做法：对每个候选实时解码原图、算 patch，再和查询 patch 比对
-                for item in topForDense {
-                    let design = package.designs[item.index]
-                    autoreleasepool {
-                        guard let enhanced = try? ImageOps.loadEnhancedGray(
-                            from: package.imageURL(for: design)
-                        ) else { return }
-                        guard let rows = try? encoder.designPatches(
-                            enhanced,
-                            fraction: item.fraction
-                        ), !rows.isEmpty else {
-                            return
-                        }
-                        var flat = [Float]()
-                        flat.reserveCapacity(rows.count * 384)
-                        for row in rows { flat.append(contentsOf: row) }
-                        denseMap[item.index] = DenseMatch.similarity(
-                            queryPatches: query.patchRows,
-                            designTiles: flat
-                        )
-                    }
+
+            // 阶段 A：取所有"接近命中"的款（密集花型彼此 CLS 都在 0.95+，只取前 N 会漏）
+            let gate = 0.93
+            var shortlist: [(index: Int, cls: Double, tile: Double, fraction: Double)] = []
+            for item in ranked {
+                let bestScore = max(item.cls, item.tile, fineTiles[item.index] ?? 0)
+                if bestScore >= gate {
+                    shortlist.append(item)
+                } else if shortlist.count >= 400 {
+                    break
                 }
             }
-            // 参考学习（内置包）：命中则抬升，不降权
-            let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
-            if !refMap.isEmpty {
-                for item in ranked {
-                    let uuid = package.designs[item.index].featureUUID
-                    if let ref = refMap[uuid], ref > 0.55 {
-                        let boosted = max(aiScores[item.index] ?? 0, ref)
-                        aiScores[item.index] = boosted
-                    }
+            if shortlist.isEmpty {
+                shortlist = Array(ranked.prefix(60))
+            }
+
+            // 阶段 B：用 tiles5 做 dense（只读 mmap，不解码图片，快）
+            var denseScores: [Int: Double] = [:]
+            if let heavy = heavy, !query.patchRows.isEmpty {
+                // 采样查询 patch，控制计算量
+                let sampled = stride(from: 0, to: query.patchRows.count, by: max(1, query.patchRows.count / 96))
+                    .map { query.patchRows[$0] }
+                for item in shortlist {
+                    let design = package.designs[item.index]
+                    guard let features = heavy.features(at: design.heavyOffset) else { continue }
+                    denseScores[item.index] = DenseMatch.similarity(
+                        queryPatches: sampled,
+                        designTiles: features.tiles5
+                    )
                 }
             }
 
-            // PC: base_score = 0.20*cls + 0.80*dense（没有 dense 时取 cls）
+            // 阶段 C：dense 排序取前 60
+            shortlist.sort { (denseScores[$0.index] ?? 0) > (denseScores[$1.index] ?? 0) }
+            let finalists = Array(shortlist.prefix(60))
+            let finalistIndices = Set(finalists.map { $0.index })
+
+            // PC: base_score = 0.20*cls + 0.80*dense
             //     ai_combined = 0.65*base_score + 0.35*tile
             for item in ranked {
-                let baseScore = denseMap[item.index].map {
-                    0.20 * item.cls + 0.80 * $0
-                } ?? item.cls
-                aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile
+                if finalistIndices.contains(item.index) {
+                    let dense = denseScores[item.index] ?? 0
+                    let baseScore = 0.20 * item.cls + 0.80 * dense
+                    aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile
+                } else {
+                    // 没进精筛的只保留粗分，避免超过精筛候选
+                    let baseScore = item.cls
+                    aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile - 0.25
+                }
             }
-            ranked.sort { (aiScores[$0.index] ?? 0) > (aiScores[$1.index] ?? 0) }
+            ranked.sort { (aiScores[$0.index] ?? -1) > (aiScores[$1.index] ?? -1) }
             _ = denseStart
         }
 
