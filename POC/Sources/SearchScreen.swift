@@ -364,20 +364,21 @@ struct SearchView: View {
     }
 
     private func resultHeader(_ timings: SearchTimings) -> some View {
-        HStack {
-            Text("找到 \(model.hits.count) 个结果")
-                if !model.note.isEmpty {
-                    Text(model.note)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(UI.textPrimary)
-            Spacer()
-            Text(String(format: "用时 %.1f 秒", timings.totalMs / 1000))
-                .font(.system(size: 12))
-                .foregroundColor(UI.textSecondary)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text("找到 \(model.hits.count) 个结果")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(UI.textPrimary)
+                Spacer()
+                Text(String(format: "用时 %.1f 秒", timings.totalMs / 1000))
+                    .font(.system(size: 12))
+                    .foregroundColor(UI.textSecondary)
+            }
+            if !model.note.isEmpty {
+                Text(model.note)
+                    .font(.system(size: 11))
+                    .foregroundColor(UI.textSecondary)
+            }
         }
         .padding(.top, 4)
     }

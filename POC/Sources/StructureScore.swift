@@ -20,7 +20,7 @@ enum StructureScore {
 
     struct QueryDescriptor {
         var edge: [Float]      // 80×80，已归一化
-        var fm: [Float]        // Fourier-Mellin 256 维
+        var fm: [Float]        // Fourier-Mellin 256 ά
         var hu: [Float]        // 7
         var stats: [Float]     // 4
     }

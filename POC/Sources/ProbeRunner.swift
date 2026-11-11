@@ -292,13 +292,13 @@ final class ProbeRunner: ObservableObject {
     private func prepareInputs() throws -> [Float] {
         if let ours = cachedTensor, cachedExpected != nil { return ours }
         guard let imageURL = Bundle.main.url(forResource: "probe_image", withExtension: "jpg") else {
-            throw ProbeError.missingFile("缺 probe_image.jpg")
+            throw ProbeError.missingFile("ȱ probe_image.jpg")
         }
         guard let refURL = Bundle.main.url(forResource: "probe_input", withExtension: "bin") else {
-            throw ProbeError.missingFile("缺 probe_input.bin")
+            throw ProbeError.missingFile("ȱ probe_input.bin")
         }
         guard let expectedURL = Bundle.main.url(forResource: "probe_expected", withExtension: "txt") else {
-            throw ProbeError.missingFile("缺 probe_expected.txt")
+            throw ProbeError.missingFile("ȱ probe_expected.txt")
         }
 
         let prepared = try PilImaging.prepareTensor(from: imageURL, size: Self.size, fraction: 1.0)

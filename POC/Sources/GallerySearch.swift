@@ -183,7 +183,7 @@ final class GallerySearch {
         do {
             progress("局部匹配…")
             let denseStart = Date()
-            let topForDense = Array(ranked.prefix(40))
+            let topForDense = Array(ranked.prefix(60))
             var denseMap: [Int: Double] = [:]
             if !query.patchRows.isEmpty {
                 // PC 的做法：对每个候选实时解码原图、算 patch，再和查询 patch 比对
@@ -405,7 +405,7 @@ final class GallerySearch {
         if let queryImage = queryImage,
            let queryBytes = ImageOps.rgbaBytes(queryImage) {
             let siftStart = Date()
-            let topForSift = Array(ranked.prefix(12))
+            let topForSift = Array(ranked.prefix(30))
             var localScores: [Int: Double] = [:]
             for item in topForSift {
                 let design = package.designs[item.index]

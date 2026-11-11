@@ -19,7 +19,7 @@ struct DesignRef {
 ///   index.json      款元数据 + 特征偏移
 ///   recall.bin      每款 cls(5×384) + tiles(9×384) + base_cls(768)
 ///   heavy.bin       tiles5(25×384) + 全局描述子 + SIFT（按需读取）
-///   images/         1400px 原图
+///   images/         1400px ԭͼ
 ///   thumbs/         缩略图
 ///
 /// recall.bin 用内存映射打开，避免一次读进内存（3.5GB 图库时很关键）。
