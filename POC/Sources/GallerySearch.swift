@@ -363,36 +363,8 @@ final class GallerySearch {
             )
         }
 
-        // ---------- 5. 深度复核：Vision + 结构 三路融合 ----------
+        // 深度复核：仅扩大候选池到 100（Vision/结构融合已移除，避免被最终公式覆盖）
         var finalList = finalHits
-        if options.deepReview, let query = queryImage, finalList.count > 1 {
-            progress("深度复核…")
-            let visionQuery = ExtraScores.visionPrint(query)
-            let structureQuery = ExtraScores.structureSignature(query)
-            var enriched: [SearchHit] = []
-            enriched.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                var vision = 0.0
-                var structure = 0.0
-                if let candidate = candidateImage(hit.design) {
-                    if let a = visionQuery, let b = ExtraScores.visionPrint(candidate) {
-                        vision = max(0, ExtraScores.cosine(a, b))
-                    }
-                    if let a = structureQuery, let b = ExtraScores.structureSignature(candidate) {
-                        structure = max(0, ExtraScores.cosine(a, b))
-                    }
-                }
-                hit.visionScore = vision
-                hit.structureScore = structure
-                if vision > 0 || structure > 0 {
-                    // 0.6 DINO + 0.25 Vision + 0.15 结构
-                    hit.score = 0.6 * hit.score + 0.25 * vision + 0.15 * structure
-                }
-                enriched.append(hit)
-            }
-            finalList = enriched.sorted { $0.score > $1.score }
-            note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
-        }
 
         // ---------- PC 最终打分：0.75 × aiComponent + 0.25 × oldScore ----------
         // 查询侧全局描述子（160 edge / fm / lbp / ori / radial / hu / stats）
