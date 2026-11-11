@@ -316,9 +316,7 @@ final class GallerySearch {
                     let dense = denseScores[item.index] ?? 0
                     let baseScore = 0.20 * item.cls + 0.80 * dense
                     var ai = 0.65 * baseScore + 0.35 * item.tile
-                    if let baseSim = baseSims[item.index], baseSim > 0 {
-                        ai = max(ai, 0.92 * baseSim)
-                    }
+                    // base 只在最终公式里融合一次（PC 的做法），召回阶段不再抬升
                     aiScores[item.index] = ai
                 } else {
                     // 未进池的保留粗分但压后，避免挤掉精排候选
