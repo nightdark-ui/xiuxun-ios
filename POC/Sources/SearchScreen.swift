@@ -366,6 +366,12 @@ struct SearchView: View {
     private func resultHeader(_ timings: SearchTimings) -> some View {
         HStack {
             Text("找到 \(model.hits.count) 个结果")
+                if !model.note.isEmpty {
+                    Text(model.note)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.top, 2)
+                }
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(UI.textPrimary)
             Spacer()
