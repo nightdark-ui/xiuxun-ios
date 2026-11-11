@@ -198,34 +198,43 @@ final class GallerySearch {
 
         if shouldCancel() { throw InstallError.cancelled }
 
-        // ---------- 2.5 两阶段召回：高分候选全部用 tiles5 dense 精筛 ----------
+        // ---------- 2.5 PC 式召回：local5 保送 + base 保送 + dense 精排 ----------
         var aiScores: [Int: Double] = [:]
         do {
             progress("局部匹配…")
-            let denseStart = Date()
 
-            // 阶段 A：取所有"接近命中"的款（密集花型彼此 CLS 都在 0.95+，只取前 N 会漏）
-            let gate = 0.93
-            var shortlist: [(index: Int, cls: Double, tile: Double, fraction: Double)] = []
-            for item in ranked {
-                let bestScore = max(item.cls, item.tile, fineTiles[item.index] ?? 0)
-                if bestScore >= gate {
-                    shortlist.append(item)
-                } else if shortlist.count >= 400 {
-                    break
-                }
+            // P0：local5（25 个细 tile 的最高分）前 60 名保送，不看综合排名。
+            // PC: local_ids = argsort(local_scores)[:60] with score > 0.20
+            let localOrdered = ranked.sorted {
+                (fineTiles[$0.index] ?? 0) > (fineTiles[$1.index] ?? 0)
             }
-            if shortlist.isEmpty {
-                shortlist = Array(ranked.prefix(60))
+            var localIds = Set<Int>()
+            for item in localOrdered.prefix(60) where (fineTiles[item.index] ?? 0) > 0.20 {
+                localIds.insert(item.index)
             }
 
-            // 阶段 B：用 tiles5 做 dense（只读 mmap，不解码图片，快）
+            // P1：base 768 维前 30 保送（PC: BASE_RECALL_LIMIT = 30）
+            let baseOrdered = ranked.sorted {
+                (baseSims[$0.index] ?? 0) > (baseSims[$1.index] ?? 0)
+            }
+            var baseIds = Set<Int>()
+            for item in baseOrdered.prefix(30) {
+                baseIds.insert(item.index)
+            }
+
+            // 候选池 = 排名前 60 ∪ local 保送 ∪ base 保送
+            var poolIds = Set(ranked.prefix(60).map { $0.index })
+            poolIds.formUnion(localIds)
+            poolIds.formUnion(baseIds)
+            let pool = ranked.filter { poolIds.contains($0.index) }
+
+            // dense：用 tiles5（已 mmap，无需解码）
             var denseScores: [Int: Double] = [:]
             if let heavy = heavy, !query.patchRows.isEmpty {
-                // 采样查询 patch，控制计算量
-                let sampled = stride(from: 0, to: query.patchRows.count, by: max(1, query.patchRows.count / 96))
+                let step = max(1, query.patchRows.count / 96)
+                let sampled = stride(from: 0, to: query.patchRows.count, by: step)
                     .map { query.patchRows[$0] }
-                for item in shortlist {
+                for item in pool {
                     let design = package.designs[item.index]
                     guard let features = heavy.features(at: design.heavyOffset) else { continue }
                     denseScores[item.index] = DenseMatch.similarity(
@@ -235,26 +244,23 @@ final class GallerySearch {
                 }
             }
 
-            // 阶段 C：dense 排序取前 60
-            shortlist.sort { (denseScores[$0.index] ?? 0) > (denseScores[$1.index] ?? 0) }
-            let finalists = Array(shortlist.prefix(60))
-            let finalistIndices = Set(finalists.map { $0.index })
-
-            // PC: base_score = 0.20*cls + 0.80*dense
-            //     ai_combined = 0.65*base_score + 0.35*tile
+            // PC: base_score = 0.20*cls + 0.80*dense；ai = 0.65*base_score + 0.35*tile
+            //     ai = max(ai, 0.92*base_cls)
             for item in ranked {
-                if finalistIndices.contains(item.index) {
+                if poolIds.contains(item.index) {
                     let dense = denseScores[item.index] ?? 0
                     let baseScore = 0.20 * item.cls + 0.80 * dense
-                    aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile
+                    var ai = 0.65 * baseScore + 0.35 * item.tile
+                    if let baseSim = baseSims[item.index], baseSim > 0 {
+                        ai = max(ai, 0.92 * baseSim)
+                    }
+                    aiScores[item.index] = ai
                 } else {
-                    // 没进精筛的只保留粗分，避免超过精筛候选
-                    let baseScore = item.cls
-                    aiScores[item.index] = 0.65 * baseScore + 0.35 * item.tile - 0.25
+                    // 未进池的保留粗分但压后，避免挤掉精排候选
+                    aiScores[item.index] = 0.65 * item.cls + 0.35 * item.tile - 0.25
                 }
             }
             ranked.sort { (aiScores[$0.index] ?? -1) > (aiScores[$1.index] ?? -1) }
-            _ = denseStart
         }
 
         // ---------- 3. base 重排 ----------
@@ -383,46 +389,6 @@ final class GallerySearch {
             finalList = rescored.sorted { $0.score > $1.score }
             timings.baseMs += Date().timeIntervalSince(structureStart) * 1000
             note += note.isEmpty ? "已应用结构分" : "；已应用结构分"
-        }
-
-        // 轮廓匹配（替代 SIFT，只在深度复核时执行）
-        if options.deepReview, let heavy = heavy, let queryImage = queryImage,
-           let contour = ContourScore.describe(queryImage) {
-            var rescored: [SearchHit] = []
-            rescored.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                guard let features = heavy.features(at: hit.design.heavyOffset) else {
-                    rescored.append(hit)
-                    continue
-                }
-                let contourScore = ContourScore.similarity(query: contour, designEdge: features.edge)
-                hit.structureScore = max(hit.structureScore, contourScore)
-                // 深度复核：0.60 AI + 0.25 Vision/轮廓 + 0.15 结构
-                // 轮廓只做微调（SIFT 接入前激进权重会翻掉正确结果）
-                hit.score = 0.85 * hit.score + 0.15 * contourScore
-                rescored.append(hit)
-            }
-            finalList = rescored.sorted { $0.score > $1.score }
-            note += note.isEmpty ? "已启用轮廓匹配" : "；已启用轮廓匹配"
-        }
-
-        // 诊断：指定款号在召回/最终排序中的位置
-        if !options.diagnosticCode.isEmpty {
-            let target = options.diagnosticCode.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let designIndex = package.designs.firstIndex(where: { $0.code == target }) {
-                let recallRank = (ranked.firstIndex(where: { $0.index == designIndex }) ?? -1) + 1
-                let finalRank = (finalList.firstIndex(where: { $0.design.index == designIndex }) ?? -1) + 1
-                let item = ranked.first(where: { $0.index == designIndex })
-                let fine = fineTiles[designIndex] ?? 0
-                let line = String(
-                    format: "诊断 %@：召回第%d / 最终第%d，CLS %.3f tile %.3f 细tile %.3f",
-                    target, recallRank, finalRank,
-                    item?.cls ?? 0, item?.tile ?? 0, fine
-                )
-                note += note.isEmpty ? line : "；" + line
-            } else {
-                note += note.isEmpty ? "诊断：未找到款号 \(target)" : "；诊断：未找到款号 \(target)"
-            }
         }
 
         // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
