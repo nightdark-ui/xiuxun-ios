@@ -209,7 +209,7 @@ enum PCGlobal {
         var result = [Float](repeating: 0, count: 7)
         for i in 0..<7 {
             let value = hu[i]
-            let logged = -Double(value.sign) * log10(abs(value) + 1e-12)
+            let logged = (value < 0 ? 1.0 : -1.0) * log10(abs(value) + 1e-12)
             let clamped = min(22.0, max(0.0, logged))
             result[i] = Float(clamped / 22.0)
         }
