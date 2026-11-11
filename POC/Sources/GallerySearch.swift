@@ -70,6 +70,8 @@ final class GallerySearch {
             (0..<(enhancedGray.width * enhancedGray.height)).map { enhancedGray.pixels[$0] }
         )
         // PC 的查询预处理（OpenCV 直译）：canonical 512 → 灰度 → CLAHE(2.0, 8×8)
+        var canonicalWidth = 512
+        var canonicalHeight = 512
         var workingGray = enhancedGray
         if let image = queryImage,
            let bytes = ImageOps.rgbaBytes(image, maxSide: 1280),
@@ -78,8 +80,8 @@ final class GallerySearch {
                width: bytes.width,
                height: bytes.height,
                autoCrop: false,
-               outWidth: nil,
-               outHeight: nil
+               outWidth: &canonicalWidth,
+               outHeight: &canonicalHeight
            ),
            let gray = CVImaging.claheGrayFromRGBA(
                canonical,
