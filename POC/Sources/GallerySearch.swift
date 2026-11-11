@@ -257,7 +257,7 @@ final class GallerySearch {
                     aiScores[item.index] = ai
                 } else {
                     // 未进池的保留粗分但压后，避免挤掉精排候选
-                    aiScores[item.index] = 0.65 * item.cls + 0.35 * item.tile - 0.25
+                    aiScores[item.index] = 0.65 * item.cls + 0.35 * item.tile - 0.08
                 }
             }
             ranked.sort { (aiScores[$0.index] ?? -1) > (aiScores[$1.index] ?? -1) }
@@ -388,7 +388,9 @@ final class GallerySearch {
             }
             finalList = rescored.sorted { $0.score > $1.score }
             timings.baseMs += Date().timeIntervalSince(structureStart) * 1000
-            note += note.isEmpty ? "已应用结构分" : "；已应用结构分"
+            note += note.isEmpty
+                ? "已应用结构分"
+                : "；已应用结构分"
         }
 
         // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
@@ -426,17 +428,6 @@ final class GallerySearch {
             note += note.isEmpty
                 ? "已 SIFT 精排（\(siftHits) 款强匹配）"
                 : "；已 SIFT 精排（\(siftHits) 款强匹配）"
-        }
-
-        // 识别严格度过滤：精准=只留高分；宽松=全部保留
-        let threshold: Double = options.strictness == 0 ? 0.72 : (options.strictness == 1 ? 0.50 : 0.0)
-        if threshold > 0 {
-            let filtered = finalList.filter { $0.score >= threshold }
-            if !filtered.isEmpty {
-                finalList = filtered
-            } else {
-                note += note.isEmpty ? "结果分数偏低" : "；结果分数偏低"
-            }
         }
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
