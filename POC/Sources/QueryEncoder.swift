@@ -129,11 +129,9 @@ final class QueryEncoder {
                 }
             }
 
-            // 多尺度 tile：1.0 与 0.7 两个尺度各 9 块，取更多候选特征
-            for tileFraction in [1.0, 0.7] {
-                let scaled = PilImaging.centerCrop(variant.image, fraction: tileFraction)
-                let tileTensors = ImageOps.prepareTiles(scaled, size: 224)
-                if tileTensors.isEmpty { continue }
+            // PC 的 9 个 tile（位置表 × 0.34）
+            let tileTensors = ImageOps.prepareTiles(variant.image, size: 224)
+            if !tileTensors.isEmpty {
                 let tileEncoded = try small.encode(batch: tileTensors)
                 for item in tileEncoded {
                     if let first = item.first {

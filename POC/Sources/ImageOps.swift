@@ -231,34 +231,33 @@ enum ImageOps {
         return PilImaging.toTensor(resized)
     }
 
-    /// 生成 3×3 tile 的九张裁切张量（每块缩放到 size）
+    /// PC 的 9 个 tile：fraction 0.34，位置 (0,0.5,1) × (0,0.5,1)
     static func prepareTiles(
         _ image: PilImaging.GrayImage,
         size: Int = 224
     ) -> [[Float]] {
+        let positions: [(Double, Double)] = [
+            (0.0, 0.0), (0.5, 0.0), (1.0, 0.0),
+            (0.0, 0.5), (0.5, 0.5), (1.0, 0.5),
+            (0.0, 1.0), (0.5, 1.0), (1.0, 1.0)
+        ]
+        let fraction = 0.34
+        let side = max(32, Int(Double(min(image.width, image.height)) * fraction))
         var tiles: [[Float]] = []
-        let w = image.width
-        let h = image.height
-        let tw = w / 3
-        let th = h / 3
-        for ty in 0..<3 {
-            for tx in 0..<3 {
-                let x0 = tx * tw
-                let y0 = ty * th
-                let width = min(tw, w - x0)
-                let height = min(th, h - y0)
-                guard width > 8, height > 8 else { continue }
-                var pixels = [UInt8](repeating: 0, count: width * height)
-                for y in 0..<height {
-                    let src = (y0 + y) * w + x0
-                    for x in 0..<width {
-                        pixels[y * width + x] = image.pixels[src + x]
-                    }
-                }
-                let tile = PilImaging.GrayImage(width: width, height: height, pixels: pixels)
-                let resized = PilImaging.resizeBicubic(tile, width: size, height: size)
-                tiles.append(PilImaging.toTensor(resized))
+        for (px, py) in positions {
+            let left = Int(Double(image.width - side) * px)
+            let top = Int(Double(image.height - side) * py)
+            guard left >= 0, top >= 0,
+                  left + side <= image.width,
+                  top + side <= image.height else { continue }
+            var pixels = [UInt8](repeating: 0, count: side * side)
+            for y in 0..<side {
+                let src = (top + y) * image.width + left
+                for x in 0..<side { pixels[y * side + x] = image.pixels[src + x] }
             }
+            let tile = PilImaging.GrayImage(width: side, height: side, pixels: pixels)
+            let resized = PilImaging.resizeBicubic(tile, width: size, height: size)
+            tiles.append(PilImaging.toTensor(resized))
         }
         return tiles
     }
