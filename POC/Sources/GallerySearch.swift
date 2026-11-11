@@ -69,25 +69,25 @@ final class GallerySearch {
         let originalData = Data(
             (0..<(enhancedGray.width * enhancedGray.height)).map { enhancedGray.pixels[$0] }
         )
-        // PC 的查询预处理：make_canonical(512, 5.5% 留白) → 灰度 → CLAHE
+        // PC 的查询预处理（OpenCV 直译）：canonical 512 → 灰度 → CLAHE(2.0, 8×8)
         var workingGray = enhancedGray
-        if let image = queryImage {
-            // 暂时停用自动裁切：我们的 bbox 算法与 PC 不同，灰底照片会裁错
-            let canonical = PCImaging.makeCanonical(image, autoCrop: false)
-            if let gray = PCImaging.grayImage(fromRGB: canonical.pixels, side: canonical.side) {
-                let equalized = Clahe.apply(
-                    gray.pixels,
-                    width: gray.width,
-                    height: gray.height,
-                    clipLimit: 2.0,
-                    tiles: 8
-                )
-                workingGray = PilImaging.GrayImage(
-                    width: gray.width,
-                    height: gray.height,
-                    pixels: equalized
-                )
-            }
+        if let image = queryImage,
+           let bytes = ImageOps.rgbaBytes(image, maxSide: 1280),
+           let canonical = CVImaging.canonicalRGBA(
+               bytes.data,
+               width: bytes.width,
+               height: bytes.height,
+               autoCrop: false,
+               outWidth: nil,
+               outHeight: nil
+           ),
+           let gray = CVImaging.claheGrayFromRGBA(
+               canonical,
+               width: 512,
+               height: 512
+           ) {
+            let pixels = [UInt8](gray)
+            workingGray = PilImaging.GrayImage(width: 512, height: 512, pixels: pixels)
         }
 
         let query = try encoder.encode(
