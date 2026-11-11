@@ -82,7 +82,11 @@ final class GallerySearch {
         let allowedLibraries = options.selectedLibraries
         let useLibraryFilter = !allowedLibraries.isEmpty
 
+        // PC 的 base CLS 全库召回通道（768 维，判别力强于 small 的 384）
+        let queryBaseVector: [Float]? = try? encoder.encodeBase(enhancedGray: enhancedGray, size: options.baseInputSize)
+
         var candidates: [(index: Int, cls: Double, tile: Double, fraction: Double)] = []
+        var baseSims: [Int: Double] = [:]
         candidates.reserveCapacity(package.count)
 
         let fromNumber = Self.codeNumber(options.codeFrom)
@@ -115,6 +119,22 @@ final class GallerySearch {
                     target: record.advanced(by: GalleryPackage.clsRows * Self.dim),
                     rows: GalleryPackage.tileRows
                 )
+                var baseSim = 0.0
+                if let baseQuery = queryBaseVector {
+                    let basePtr = record.advanced(by: GalleryPackage.clsRows * GalleryPackage.dim
+                        + GalleryPackage.tileRows * GalleryPackage.dim)
+                    var dot = 0.0
+                    var normB = 0.0
+                    for i in 0..<GalleryPackage.baseDim {
+                        let b = Double(basePtr[i])
+                        dot += Double(baseQuery[i]) * b
+                        normB += b * b
+                    }
+                    if normB > 1e-9 {
+                        baseSim = dot / normB.squareRoot()
+                    }
+                }
+                baseSims[index] = baseSim
                 candidates.append((index, clsScore, tileScore, designFraction))
                 timings.compared = candidates.count
             }
@@ -157,8 +177,8 @@ final class GallerySearch {
         }
 
         var ranked = candidates.sorted {
-            let left = max($0.cls, $0.tile, fineTiles[$0.index] ?? 0)
-            let right = max($1.cls, $1.tile, fineTiles[$1.index] ?? 0)
+            let left = max($0.cls, $0.tile, fineTiles[$0.index] ?? 0, baseSims[$0.index] ?? 0)
+            let right = max($1.cls, $1.tile, fineTiles[$1.index] ?? 0, baseSims[$1.index] ?? 0)
             return left > right
         }
         if let top = ranked.first {
