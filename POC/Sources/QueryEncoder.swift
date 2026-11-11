@@ -1,4 +1,4 @@
-import Foundation
+﻿import Foundation
 import CryptoKit
 
 /// 查询特征（与 PC/安卓同结构）
