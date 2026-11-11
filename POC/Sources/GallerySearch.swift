@@ -416,58 +416,21 @@ final class GallerySearch {
             note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
         }
 
-        // 结构分（PC 的 old_score 那 25%）：edge 相关 + Hu 矩 + 统计量
-        if let heavy = heavy, options.deepReview || true {
-            let structureStart = Date()
-            let queryDescriptor = StructureScore.describe(workingGray)
-            let descriptorMs = Date().timeIntervalSince(structureStart) * 1000
-            note += note.isEmpty ? String(format: "特征计算 %.0fms", descriptorMs) : String(format: "；特征计算 %.0fms", descriptorMs)
-            // 先算原始结构分
-            var raws: [Int: Double] = [:]
-            for hit in finalList {
-                guard let features = heavy.features(at: hit.design.heavyOffset) else { continue }
-                raws[hit.design.index] = StructureScore.structure(
-                    query: queryDescriptor,
-                    designEdge: features.edge,
-                    designFm: features.fm,
-                    designHu: features.hu,
-                    designStats: features.stats
-                )
-            }
-            // 与 PC 一致：直接用绝对结构分（0…1），不做名次归一化
-            func normalized(_ raw: Double) -> Double { raw }
+        // ---------- PC 最终打分：0.75 × aiComponent + 0.25 × oldScore ----------
+        // 查询侧全局描述子（160 edge / fm / lbp / ori / radial / hu / stats）
+        let structureBytes = Array(workingGray.pixels)
+        let globalQuery = PCGlobal.describe(structure: structureBytes, side: workingGray.width)
 
-            var rescored: [SearchHit] = []
-            rescored.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                guard let raw = raws[hit.design.index] else {
-                    rescored.append(hit)
-                    continue
-                }
-                let structure = normalized(raw)
-                hit.structureScore = structure
-                hit.score = 0.75 * (hit.aiScore) + 0.25 * structure
-                rescored.append(hit)
-            }
-            finalList = rescored.sorted { $0.score > $1.score }
-            timings.baseMs += Date().timeIntervalSince(structureStart) * 1000
-            note += note.isEmpty
-                ? "已应用结构分"
-                : "；已应用结构分"
-        }
-
-        // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
-        if let queryImage = queryImage,
-           let queryBytes = ImageOps.rgbaBytes(queryImage) {
-            let siftStart = Date()
+        // SIFT：对前 60 名候选算一次（PC 的 local 分量）
+        var siftScores: [Int: Double] = [:]
+        if let queryImage = queryImage, let queryBytes = ImageOps.rgbaBytes(queryImage) {
             let topForSift = Array(ranked.prefix(60))
-            var localScores: [Int: Double] = [:]
             for item in topForSift {
                 let design = package.designs[item.index]
                 autoreleasepool {
                     guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
                           let designBytes = ImageOps.rgbaBytes(image) else { return }
-                    localScores[item.index] = CVLocalMatcher.matchQuery(
+                    siftScores[item.index] = CVLocalMatcher.matchQuery(
                         queryBytes.data,
                         qWidth: queryBytes.width,
                         qHeight: queryBytes.height,
@@ -477,21 +440,34 @@ final class GallerySearch {
                     )
                 }
             }
-            timings.baseMs += Date().timeIntervalSince(siftStart) * 1000
-            // 把 SIFT 分数接进排序（PC: old_score 里含 local 分量）
-            var adjusted = finalList
-            for index in 0..<adjusted.count {
-                let designIndex = adjusted[index].design.index
-                if let local = localScores[designIndex] {
-                    adjusted[index].score = 0.62 * adjusted[index].score + 0.38 * local
-                }
-            }
-            finalList = adjusted.sorted { $0.score > $1.score }
-            let siftHits = localScores.values.filter { $0 > 0.3 }.count
-            note += note.isEmpty
-                ? "已 SIFT 精排（\(siftHits) 款强匹配）"
-                : "；已 SIFT 精排（\(siftHits) 款强匹配）"
         }
+
+        var scored: [SearchHit] = []
+        scored.reserveCapacity(finalList.count)
+        for var hit in finalList {
+            let index = hit.design.index
+            guard let features = heavy?.features(at: hit.design.heavyOffset) else {
+                scored.append(hit)
+                continue
+            }
+            let sims = PCScoreFinal.compareGlobal(query: globalQuery, design: features)
+            let edge = StructureScore.edgeCorrelation(
+                globalQuery.edge.map { $0 / 255.0 },
+                features.edge
+            )
+            let local = siftScores[index] ?? 0
+            let old = PCScoreFinal.oldScore(local: local, edge: edge, stats: sims)
+
+            var aiComp = PCScoreFinal.aiComponent(hit.aiScore)
+            if hit.baseScore > 0 {
+                aiComp = 0.70 * aiComp + 0.30 * PCScoreFinal.aiComponent(hit.baseScore)
+            }
+            hit.structureScore = old
+            hit.score = min(0.995, max(0, 0.75 * aiComp + 0.25 * old))
+            scored.append(hit)
+        }
+        finalList = scored.sorted { $0.score > $1.score }
+        note += note.isEmpty ? "已按 PC 公式打分" : "；已按 PC 公式打分"
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
