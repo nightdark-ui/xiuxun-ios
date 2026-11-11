@@ -155,6 +155,27 @@ enum ImageOps {
         return PilImaging.GrayImage(width: cropW, height: cropH, pixels: output)
     }
 
+    /// RGBA 字节 → UIImage
+    static func uiImageFromRGBA(_ data: Data, width: Int, height: Int) -> UIImage? {
+        guard data.count >= width * height * 4 else { return nil }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let provider = CGDataProvider(data: data as CFData),
+              let cg = CGImage(
+                  width: width,
+                  height: height,
+                  bitsPerComponent: 8,
+                  bitsPerPixel: 32,
+                  bytesPerRow: width * 4,
+                  space: colorSpace,
+                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  provider: provider,
+                  decode: nil,
+                  shouldInterpolate: false,
+                  intent: .defaultIntent
+              ) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+
     /// 按角度旋转 UIImage（给 SIFT 多旋转变体用）
     static func rotateUIImage(_ image: UIImage, degrees: Int) -> UIImage {
         let radians = CGFloat(degrees) * .pi / 180

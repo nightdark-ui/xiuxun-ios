@@ -433,7 +433,13 @@ final class GallerySearch {
 
         // SIFT：对前 60 名候选算一次（PC 的 local 分量）
         var siftScores: [Int: Double] = [:]
-        if let queryImage = queryImage, let queryBytes = ImageOps.rgbaBytes(queryImage) {
+        let siftQuery: UIImage? = {
+            if let canonical = canonicalBytes {
+                return ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512)
+            }
+            return queryImage
+        }()
+        if let siftQuery = siftQuery, let queryBytes = ImageOps.rgbaBytes(siftQuery) {
             let topForSift = Array(ranked.prefix(60))
             for item in topForSift {
                 let design = package.designs[item.index]
