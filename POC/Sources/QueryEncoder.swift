@@ -87,6 +87,14 @@ final class QueryEncoder {
                 variants.append(("mir\(angle)", ImageOps.rotate(mirrored, degrees: angle)))
             }
         }
+        // 边条变体：上下左右四条 34% 的条带（PC 的 border strip 思路）
+        var borderStrips: [(String, PilImaging.GrayImage)] = []
+        let stripFraction = 0.34
+        borderStrips.append(("strip-top", ImageOps.cropBand(base, fraction: stripFraction, side: .top)))
+        borderStrips.append(("strip-bottom", ImageOps.cropBand(base, fraction: stripFraction, side: .bottom)))
+        borderStrips.append(("strip-left", ImageOps.cropBand(base, fraction: stripFraction, side: .left)))
+        borderStrips.append(("strip-right", ImageOps.cropBand(base, fraction: stripFraction, side: .right)))
+
         // 循环花型增强：追加若干"重复单元"变体（只提供 CLS）
         var repeatVariants: [PilImaging.GrayImage] = []
         if options.allowRepeat {
@@ -128,6 +136,19 @@ final class QueryEncoder {
                 for item in tileEncoded {
                     if let first = item.first {
                         tileRows.append(normalize(first.cls))
+                    }
+                }
+            }
+        }
+
+        for (_, strip) in borderStrips {
+            let tensors = DinoEncoder.queryFractions.map {
+                ImageOps.prepareTensor(strip, fraction: $0, size: 224)
+            }
+            if let encoded = try? small.encode(batch: tensors) {
+                for item in encoded {
+                    if let first = item.first {
+                        clsRows.append(normalize(first.cls))
                     }
                 }
             }

@@ -178,6 +178,30 @@ enum ImageOps {
         return (Data(pixels), width, height)
     }
 
+    enum BandSide { case top, bottom, left, right }
+
+    /// 取一条边带（用于序列花型的条带匹配）
+    static func cropBand(
+        _ image: PilImaging.GrayImage,
+        fraction: Double,
+        side: BandSide
+    ) -> PilImaging.GrayImage {
+        let w = image.width
+        let h = image.height
+        let horizontal = (side == .top || side == .bottom)
+        let thickness = max(16, Int(Double(horizontal ? h : w) * fraction))
+        let x0 = side == .left ? 0 : (side == .right ? max(0, w - thickness) : 0)
+        let y0 = side == .top ? 0 : (side == .bottom ? max(0, h - thickness) : 0)
+        let cw = horizontal ? w : thickness
+        let ch = horizontal ? thickness : h
+        var out = [UInt8](repeating: 0, count: cw * ch)
+        for y in 0..<ch {
+            let src = (y0 + y) * w + x0
+            for x in 0..<cw { out[y * cw + x] = image.pixels[src + x] }
+        }
+        return PilImaging.GrayImage(width: cw, height: ch, pixels: out)
+    }
+
     /// 中心方形裁切 + BICUBIC 缩放到 size，再归一化成 NCHW 张量
     static func prepareTensor(
         _ image: PilImaging.GrayImage,
