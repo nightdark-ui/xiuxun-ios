@@ -224,7 +224,8 @@ struct GalleryLocationSection: View {
 
     var body: some View {
         AppCard {
-            CardHeader(title: "图库文件夹", subtitle: currentPath)
+            CardHeader(title: "图库文件夹")
+            Text(currentPath).font(.system(size: 12)).foregroundStyle(.secondary)
             Button("选择图库文件夹") { picking = true }
                 .buttonStyle(.plain)
                 .foregroundStyle(UI.orange)
