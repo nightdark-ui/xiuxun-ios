@@ -392,8 +392,19 @@ final class GallerySearch {
                 }
             }
             timings.baseMs += Date().timeIntervalSince(siftStart) * 1000
-            note += note.isEmpty ? "已 SIFT 精排" : "；已 SIFT 精排"
-            _ = localScores
+            // 把 SIFT 分数接进排序（PC: old_score 里含 local 分量）
+            var adjusted = finalList
+            for index in 0..<adjusted.count {
+                let designIndex = adjusted[index].design.index
+                if let local = localScores[designIndex] {
+                    adjusted[index].score = 0.70 * adjusted[index].score + 0.30 * local
+                }
+            }
+            finalList = adjusted.sorted { $0.score > $1.score }
+            let siftHits = localScores.values.filter { $0 > 0.3 }.count
+            note += note.isEmpty
+                ? "已 SIFT 精排（\(siftHits) 款强匹配）"
+                : "；已 SIFT 精排（\(siftHits) 款强匹配）"
         }
 
         // 识别严格度过滤：精准=只留高分；宽松=全部保留
