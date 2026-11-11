@@ -346,13 +346,7 @@ final class GallerySearch {
                 }
             }
             timings.baseMs = Date().timeIntervalSince(baseStart) * 1000
-            // PC: ai_combined = max(ai_combined, 0.92 * base_cls)
-            for (index, value) in baseScores where value > 0 {
-                let boosted = 0.92 * value
-                if boosted > (aiScores[index] ?? 0) {
-                    aiScores[index] = boosted
-                }
-            }
+            // base 只在最终公式里融合一次（P1）
         }
 
         // ---------- 4. 组装结果 ----------
@@ -400,24 +394,6 @@ final class GallerySearch {
             note += note.isEmpty ? "已启用深度复核" : "；已启用深度复核"
         }
 
-        // 参考学习加权（只对有样本的款生效）
-        if LearningStore.shared.uuidCount > 0 {
-            var boosted: [SearchHit] = []
-            boosted.reserveCapacity(finalList.count)
-            for var hit in finalList {
-                let ref = LearningStore.shared.referenceScore(
-                    queryRows: query.clsRows,
-                    uuid: hit.design.featureUUID
-                )
-                if ref >= 0 {
-                    hit.score = 0.85 * hit.score + 0.15 * ref
-                }
-                boosted.append(hit)
-            }
-            finalList = boosted.sorted { $0.score > $1.score }
-            note += note.isEmpty ? "已应用参考学习" : "；已应用参考学习"
-        }
-
         // ---------- PC 最终打分：0.75 × aiComponent + 0.25 × oldScore ----------
         // 查询侧全局描述子（160 edge / fm / lbp / ori / radial / hu / stats）
         // PC 的 global_descriptor 输入是 structure map（512×512 边缘图），不是灰度图
@@ -460,6 +436,7 @@ final class GallerySearch {
             }
         }
 
+        let refMap = LearningStore.shared.bundledBoostMap(queryRows: query.clsRows)
         var scored: [SearchHit] = []
         scored.reserveCapacity(finalList.count)
         for var hit in finalList {
@@ -477,6 +454,9 @@ final class GallerySearch {
             let old = PCScoreFinal.oldScore(local: local, edge: edge, stats: sims)
 
             var aiComp = PCScoreFinal.aiComponent(hit.aiScore)
+            if let ref = refMap[hit.design.featureUUID], ref >= 0.9 {
+                aiComp = PCScoreFinal.aiComponent(ref)
+            }
             if hit.baseScore > 0 {
                 aiComp = 0.70 * aiComp + 0.30 * PCScoreFinal.aiComponent(hit.baseScore)
             }
