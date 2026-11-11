@@ -263,19 +263,47 @@ final class GallerySearch {
             poolIds.formUnion(baseIds)
             let pool = ranked.filter { poolIds.contains($0.index) }
 
-            // dense：用 tiles5（已 mmap，无需解码）
+            // dense：解码设计图 → 与查询同尺度的 patch（PC 的 dense_similarity）
+            var denseWidth = 512
+            var denseHeight = 512
             var denseScores: [Int: Double] = [:]
-            if let heavy = heavy, !query.patchRows.isEmpty {
+            if !query.patchRows.isEmpty {
                 let step = max(1, query.patchRows.count / 96)
                 let sampled = stride(from: 0, to: query.patchRows.count, by: step)
                     .map { query.patchRows[$0] }
                 for item in pool {
                     let design = package.designs[item.index]
-                    guard let features = heavy.features(at: design.heavyOffset) else { continue }
-                    denseScores[item.index] = DenseMatch.similarity(
-                        queryPatches: sampled,
-                        designTiles: features.tiles5
-                    )
+                    autoreleasepool {
+                        guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
+                              let bytes = ImageOps.rgbaBytes(image, maxSide: 1280),
+                              let canonical = CVImaging.canonicalRGBA(
+                                  bytes.data,
+                                  width: bytes.width,
+                                  height: bytes.height,
+                                  autoCrop: false,
+                                  outWidth: &denseWidth,
+                                  outHeight: &denseHeight
+                              ),
+                              let grayData = CVImaging.claheGray(
+                                  fromRGBA: canonical,
+                                  width: 512,
+                                  height: 512
+                              ) else { return }
+                        let gray = PilImaging.GrayImage(
+                            width: 512,
+                            height: 512,
+                            pixels: [UInt8](grayData)
+                        )
+                        guard let rows = try? encoder.designPatches(gray, fraction: 1.0),
+                              !rows.isEmpty else { return }
+                        var flat = [Float]()
+                        flat.reserveCapacity(rows.count * 384)
+                        for row in rows { flat.append(contentsOf: row) }
+                        denseScores[item.index] = DenseMatch.similarity(
+                            queryPatches: sampled,
+                            designTiles: flat
+                        )
+                    }
                 }
             }
 
