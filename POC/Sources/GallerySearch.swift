@@ -381,11 +381,11 @@ final class GallerySearch {
                 autoreleasepool {
                     guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
                           let designBytes = ImageOps.rgbaBytes(image) else { return }
-                    localScores[item.index] = CVLocalMatcher.match(
-                        query: queryBytes.data,
+                    localScores[item.index] = CVLocalMatcher.matchQuery(
+                        queryBytes.data,
                         qWidth: queryBytes.width,
                         qHeight: queryBytes.height,
-                        design: designBytes.data,
+                        designRGBA: designBytes.data,
                         dWidth: designBytes.width,
                         dHeight: designBytes.height
                     )
