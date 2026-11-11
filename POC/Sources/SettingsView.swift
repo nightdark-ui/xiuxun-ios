@@ -271,7 +271,7 @@ extension Notification.Name {
 
 /// 诊断：输入款号，搜索时输出该款在召回/最终排序中的位置
 struct DiagnoseSection: View {
-    @EnvironmentObject private var settings: AppSettings
+    @ObservedObject private var settings = AppSettings.shared
 
     var body: some View {
         AppCard {
