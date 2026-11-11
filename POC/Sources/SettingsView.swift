@@ -232,7 +232,7 @@ struct GalleryLocationSection: View {
             if !message.isEmpty {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Hint("选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）")
+            Hint(text: "选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）")
         }
         .fileImporter(
             isPresented: $picking,
