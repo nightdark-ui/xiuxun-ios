@@ -1,5 +1,8 @@
 #import "CVLocalMatcher.h"
-#import <opencv2/opencv.hpp>
+// 不能 import <opencv2/opencv.hpp>：它会把 stitching 头带进来，
+// 其中 enum { NO, ... } 与 Objective-C 的 NO 宏冲突。
+#import <opencv2/core.hpp>
+#import <opencv2/imgproc.hpp>
 #import <opencv2/features2d.hpp>
 #import <opencv2/calib3d.hpp>
 
