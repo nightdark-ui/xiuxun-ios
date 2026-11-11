@@ -5,21 +5,41 @@
 #import <opencv2/features2d.hpp>
 #import <opencv2/calib3d.hpp>
 
-@interface CVSiftFeatures : NSObject {
-@public
+struct SiftStorage {
     cv::Mat gray;
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
-}
+};
+
+@interface CVSiftFeatures ()
+@property (nonatomic, assign) void *storage;
 @end
 
 @implementation CVSiftFeatures
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _storage = new SiftStorage();
+    }
+    return self;
+}
+
+- (void)dealloc {
+    delete (SiftStorage *)_storage;
+    _storage = nullptr;
+}
+
 @end
 
 @implementation CVLocalMatcher
 
 + (BOOL)isAvailable {
     return YES;
+}
+
+static SiftStorage *storageOf(CVSiftFeatures *features) {
+    return (SiftStorage *)features.storage;
 }
 
 static cv::Mat grayFromRGBA(NSData *data, NSInteger width, NSInteger height) {
@@ -40,11 +60,12 @@ static cv::Mat grayFromRGBA(NSData *data, NSInteger width, NSInteger height) {
 
 + (CVSiftFeatures *)extractFeatures:(NSData *)rgba width:(NSInteger)width height:(NSInteger)height {
     CVSiftFeatures *features = [[CVSiftFeatures alloc] init];
+    SiftStorage *storage = storageOf(features);
     cv::Mat gray = grayFromRGBA(rgba, width, height);
     if (gray.empty()) { return features; }
-    features->gray = gray;
+    storage->gray = gray;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create(0, 3, 0.04, 10.0, 1.6);
-    sift->detectAndCompute(gray, cv::noArray(), features->keypoints, features->descriptors);
+    sift->detectAndCompute(gray, cv::noArray(), storage->keypoints, storage->descriptors);
     return features;
 }
 
@@ -84,14 +105,17 @@ static double scoreFromMatches(
 
 + (double)matchFeatures:(CVSiftFeatures *)query against:(CVSiftFeatures *)design {
     if (query == nil || design == nil) { return 0.0; }
-    return scoreFromMatches(query->keypoints, query->descriptors, design->descriptors, design->keypoints);
+    SiftStorage *q = storageOf(query);
+    SiftStorage *d = storageOf(design);
+    return scoreFromMatches(q->keypoints, q->descriptors, d->descriptors, d->keypoints);
 }
 
 + (double)matchFeatures:(CVSiftFeatures *)query
         designKeypoints:(NSData *)keypoints
       designDescriptors:(NSData *)descriptors {
     if (query == nil || keypoints.length < 20 || descriptors.length < 128 * 4) { return 0.0; }
-    if (query->descriptors.empty() || query->keypoints.size() < 4) { return 0.0; }
+    SiftStorage *q = storageOf(query);
+    if (q->descriptors.empty() || q->keypoints.size() < 4) { return 0.0; }
 
     const size_t count = descriptors.length / (128 * sizeof(float));
     if (count < 4 || keypoints.length < count * 5 * sizeof(float)) { return 0.0; }
@@ -104,7 +128,7 @@ static double scoreFromMatches(
         const float *row = kpData + i * 5;
         designKp.emplace_back(cv::Point2f(row[0], row[1]), row[2], row[3], row[4]);
     }
-    return scoreFromMatches(query->keypoints, query->descriptors, descMat, designKp);
+    return scoreFromMatches(q->keypoints, q->descriptors, descMat, designKp);
 }
 
 + (double)matchQuery:(NSData *)queryRGBA
