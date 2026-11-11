@@ -60,6 +60,16 @@ jobs:
           curl -fL --retry 3 -o POC/Resources/dinov2-base-fp16.onnx https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
           ls -lh POC/Resources/dinov2-base-fp16.onnx
 
+      - name: Fetch OpenCV framework
+        run: |
+          if [ ! -d POC/Vendor/opencv2.framework ]; then
+            mkdir -p POC/Vendor
+            curl -fL --retry 3 -o /tmp/opencv.zip https://github.com/opencv/opencv/releases/download/4.9.0/opencv-4.9.0-ios-framework.zip
+            unzip -q /tmp/opencv.zip -d /tmp/opencv
+            cp -R /tmp/opencv/opencv2.framework POC/Vendor/
+          fi
+          ls -la POC/Vendor
+
       - name: Generate project
         working-directory: POC
         run: |
