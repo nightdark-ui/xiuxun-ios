@@ -130,7 +130,37 @@ final class GallerySearch {
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
-        var ranked = candidates.sorted { max($0.cls, $0.tile) > max($1.cls, $1.tile) }
+        // 第三召回通道：查询图 vs 全库 25 个细 tile（局部图靠它）
+        var fineTiles: [Int: Double] = [:]
+        if let heavy = heavy, !query.clsRows.isEmpty {
+            progress("细粒度比对…")
+            // 只用 8 个旋转的整图行，控制计算量
+            let queryRows = Array(query.clsRows.prefix(8))
+            for index in 0..<count {
+                let design = package.designs[index]
+                guard let features = heavy.features(at: design.heavyOffset) else { continue }
+                var best = 0.0
+                let tileCount = features.tiles5.count / 384
+                for row in queryRows {
+                    for tile in 0..<tileCount {
+                        let offset = tile * 384
+                        var dot = 0.0
+                        for i in 0..<384 {
+                            dot += Double(row[i]) * Double(features.tiles5[offset + i])
+                        }
+                        if dot > best { best = dot }
+                        if best >= 0.999 { break }
+                    }
+                }
+                fineTiles[index] = best
+            }
+        }
+
+        var ranked = candidates.sorted {
+            let left = max($0.cls, $0.tile, fineTiles[$0.index] ?? 0)
+            let right = max($1.cls, $1.tile, fineTiles[$1.index] ?? 0)
+            return left > right
+        }
         if let top = ranked.first {
             let topDesign = package.designs[top.index]
             let topScore = Self.combined(top.cls, top.tile)
