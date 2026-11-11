@@ -70,6 +70,7 @@ final class GallerySearch {
             (0..<(enhancedGray.width * enhancedGray.height)).map { enhancedGray.pixels[$0] }
         )
         // PC 的查询预处理（OpenCV 直译）：canonical 512 → 灰度 → CLAHE(2.0, 8×8)
+        var canonicalBytes: Data?
         var canonicalWidth = 512
         var canonicalHeight = 512
         var workingGray = enhancedGray
@@ -88,6 +89,7 @@ final class GallerySearch {
                width: 512,
                height: 512
            ) {
+            canonicalBytes = canonical
             let pixels = [UInt8](gray)
             workingGray = PilImaging.GrayImage(width: 512, height: 512, pixels: pixels)
         }
@@ -418,8 +420,18 @@ final class GallerySearch {
 
         // ---------- PC 最终打分：0.75 × aiComponent + 0.25 × oldScore ----------
         // 查询侧全局描述子（160 edge / fm / lbp / ori / radial / hu / stats）
-        let structureBytes = Array(workingGray.pixels)
-        let globalQuery = PCGlobal.describe(structure: structureBytes, side: workingGray.width)
+        // PC 的 global_descriptor 输入是 structure map（512×512 边缘图），不是灰度图
+        var structureBytes = Array(workingGray.pixels)
+        if let canonical = canonicalBytes,
+           let structure = CVImaging.structureMap(
+               fromRGBA: canonical,
+               width: 512,
+               height: 512,
+               size: 512
+           ) {
+            structureBytes = [UInt8](structure)
+        }
+        let globalQuery = PCGlobal.describe(structure: structureBytes, side: 512)
 
         // SIFT：对前 60 名候选算一次（PC 的 local 分量）
         var siftScores: [Int: Double] = [:]
