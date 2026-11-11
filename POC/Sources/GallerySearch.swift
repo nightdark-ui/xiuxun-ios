@@ -332,25 +332,38 @@ final class GallerySearch {
                 let contourScore = ContourScore.similarity(query: contour, designEdge: features.edge)
                 hit.structureScore = max(hit.structureScore, contourScore)
                 // 深度复核：0.60 AI + 0.25 Vision/轮廓 + 0.15 结构
-                hit.score = 0.45 * hit.score + 0.40 * contourScore + 0.15 * hit.structureScore
+                // 轮廓只做微调（SIFT 接入前激进权重会翻掉正确结果）
+                hit.score = 0.85 * hit.score + 0.15 * contourScore
                 rescored.append(hit)
             }
             finalList = rescored.sorted { $0.score > $1.score }
             note += note.isEmpty ? "已启用轮廓匹配" : "；已启用轮廓匹配"
         }
 
-        // 显示分按名次铺开（仅影响显示，排序已按相似度确定）
-        if finalList.count > 1 {
-            let count = finalList.count
-            var display: [SearchHit] = []
-            display.reserveCapacity(count)
-            for (index, var hit) in finalList.enumerated() {
-                // 第 1 名 100%，最后一名约 55%，中间线性递减
-                let step = 1.0 - Double(index) / Double(count - 1)
-                hit.score = 0.55 + 0.45 * step
-                display.append(hit)
+        // SIFT 局部匹配（对应 PC matching.local_match）：只对前 30 名重排
+        if let queryImage = queryImage,
+           let queryBytes = ImageOps.rgbaBytes(queryImage) {
+            let siftStart = Date()
+            let topForSift = Array(ranked.prefix(30))
+            var localScores: [Int: Double] = [:]
+            for item in topForSift {
+                let design = package.designs[item.index]
+                autoreleasepool {
+                    guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
+                          let designBytes = ImageOps.rgbaBytes(image) else { return }
+                    localScores[item.index] = CVLocalMatcher.match(
+                        query: queryBytes.data,
+                        qWidth: queryBytes.width,
+                        qHeight: queryBytes.height,
+                        design: designBytes.data,
+                        dWidth: designBytes.width,
+                        dHeight: designBytes.height
+                    )
+                }
             }
-            finalList = display
+            timings.baseMs += Date().timeIntervalSince(siftStart) * 1000
+            note += note.isEmpty ? "已 SIFT 精排" : "；已 SIFT 精排"
+            _ = localScores
         }
 
         // 识别严格度过滤：精准=只留高分；宽松=全部保留

@@ -154,6 +154,29 @@ enum ImageOps {
         return PilImaging.GrayImage(width: cropW, height: cropH, pixels: output)
     }
 
+    /// 导出 RGBA8 字节（给 OpenCV 用）
+    static func rgbaBytes(_ image: UIImage, maxSide: Int = 900) -> (data: Data, width: Int, height: Int)? {
+        guard let cg = image.cgImage else { return nil }
+        let longest = max(cg.width, cg.height)
+        let scale = longest > maxSide ? Double(maxSide) / Double(longest) : 1.0
+        let width = max(1, Int(Double(cg.width) * scale))
+        let height = max(1, Int(Double(cg.height) * scale))
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .medium
+        context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return (Data(pixels), width, height)
+    }
+
     /// 中心方形裁切 + BICUBIC 缩放到 size，再归一化成 NCHW 张量
     static func prepareTensor(
         _ image: PilImaging.GrayImage,
