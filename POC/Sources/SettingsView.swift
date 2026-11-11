@@ -58,7 +58,7 @@ final class AppSettings: ObservableObject {
         codeFrom = defaults.string(forKey: "set.codeFrom") ?? ""
         codeTo = defaults.string(forKey: "set.codeTo") ?? ""
         let count = defaults.integer(forKey: "set.resultCount")
-        resultCount = count > 0 ? count : 30
+        resultCount = count > 0 ? count : 60
     }
 
     func makeOptions() -> SearchOptions {

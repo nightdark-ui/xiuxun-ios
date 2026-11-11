@@ -327,7 +327,9 @@ final class GallerySearch {
         }
 
         // ---------- 3. base 重排 ----------
-        let baseLimit = 60
+        // 候选池：深度复核扩到 100，否则 60（与 PC 一致）
+        let poolLimit = options.deepReview ? 100 : 60
+        let baseLimit = poolLimit
         let baseSize = options.deepReview ? 336 : options.baseInputSize
         var baseScores: [Int: Double] = [:]
         if ranked.count > 1 {
@@ -354,7 +356,7 @@ final class GallerySearch {
         }
 
         // ---------- 4. 组装结果 ----------
-        let finalHits: [SearchHit] = ranked.prefix(max(1, options.resultCount)).map { item in
+        let finalHits: [SearchHit] = ranked.prefix(poolLimit).map { item in
             let ai = aiScores[item.index] ?? Self.combined(item.cls, item.tile)
             let baseScore = baseScores[item.index] ?? 0
             return SearchHit(
@@ -440,7 +442,7 @@ final class GallerySearch {
             return queryImage
         }()
         if let siftQuery = siftQuery, let queryBytes = ImageOps.rgbaBytes(siftQuery) {
-            let topForSift = Array(ranked.prefix(60))
+            let topForSift = Array(ranked.prefix(poolLimit))
             for item in topForSift {
                 let design = package.designs[item.index]
                 autoreleasepool {
@@ -487,7 +489,7 @@ final class GallerySearch {
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
-        return SearchOutcome(hits: finalList, timings: timings, note: note)
+        return SearchOutcome(hits: Array(finalList.prefix(max(1, options.resultCount))), timings: timings, note: note)
     }
 
     /// 从编号里取出数字部分（SL9015 → 9015）
