@@ -49,7 +49,7 @@ final class AppSettings: ObservableObject {
         deepReview = defaults.bool(forKey: "set.deepReview")
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
-        base336 = defaults.bool(forKey: "set.base336")
+        base336 = defaults.object(forKey: "set.base336") as? Bool ?? true
         allowRepeat = defaults.bool(forKey: "set.allowRepeat")
         autoCrop = defaults.object(forKey: "set.autoCrop") as? Bool ?? true
         localFirst = defaults.bool(forKey: "set.localFirst")
@@ -68,7 +68,7 @@ final class AppSettings: ObservableObject {
         options.fastMode = false   // 已移除快速模式：只转 4 角度会影响精度
         options.deepReview = deepReview
         options.resultCount = resultCount
-        options.baseInputSize = base336 ? 336 : 224
+        options.baseInputSize = 336
         options.selectedLibraries = libraryFilter
         options.diagnosticCode = diagnosticCode
         options.allowRepeat = allowRepeat

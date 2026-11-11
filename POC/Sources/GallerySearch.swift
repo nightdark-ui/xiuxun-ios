@@ -79,7 +79,7 @@ final class GallerySearch {
                bytes.data,
                width: bytes.width,
                height: bytes.height,
-               autoCrop: false,
+               autoCrop: options.autoCrop,
                outWidth: &canonicalWidth,
                outHeight: &canonicalHeight
            ),
@@ -92,9 +92,11 @@ final class GallerySearch {
             workingGray = PilImaging.GrayImage(width: 512, height: 512, pixels: pixels)
         }
 
+        var encodeOptions = options
+        encodeOptions.autoCrop = false   // canonical 已经处理过裁切
         let query = try encoder.encode(
             enhancedGray: workingGray,
-            options: options,
+            options: encodeOptions,
             originalData: originalData
         )
         timings.encodeMs = Date().timeIntervalSince(encodeStart) * 1000
@@ -178,7 +180,7 @@ final class GallerySearch {
         if let heavy = heavy, !query.clsRows.isEmpty {
             progress("细粒度比对…")
             // 只用 8 个旋转的整图行，控制计算量
-            let queryRows = Array(query.clsRows.prefix(8))
+            let queryRows = query.tileRows
             for index in 0..<package.designs.count {
                 let design = package.designs[index]
                 guard let features = heavy.features(at: design.heavyOffset) else { continue }

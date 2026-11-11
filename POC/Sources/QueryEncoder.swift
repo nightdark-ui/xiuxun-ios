@@ -20,7 +20,7 @@ struct SearchOptions {
     var fastMode = false             // 快速模式：4 角度
     var deepReview = false           // 深度复核：候选更宽 + base 336
     var resultCount = 30
-    var baseInputSize = 224
+    var baseInputSize = 336
     var sensitivity = 1.0
     var selectedLibraries: Set<String> = []
     var autoCrop: Bool = true
@@ -67,7 +67,7 @@ final class QueryEncoder {
             mirror: options.mirrorEnabled,
             fast: options.fastMode
         )
-        if let cached = loadCache(key: key) { return cached }
+        if false, let cached = loadCache(key: key) { return cached }
 
         var base = image
         if options.autoCrop {
