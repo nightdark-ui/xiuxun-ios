@@ -204,6 +204,16 @@ final class GallerySearch {
             let right = max($1.cls, $1.tile, fineTiles[$1.index] ?? 0, baseSims[$1.index] ?? 0)
             return left > right
         }
+
+        // 诊断：CLS 前 5 名（与 PC 对拍用）
+        do {
+            let top = ranked.prefix(5).map { item -> String in
+                String(format: "%@(%.3f)", package.designs[item.index].code, item.cls)
+            }
+            let line = "CLS前5: " + top.joined(separator: " ")
+            note += note.isEmpty ? line : "；" + line
+        }
+
         if let top = ranked.first {
             let topDesign = package.designs[top.index]
             let topScore = Self.combined(top.cls, top.tile)
