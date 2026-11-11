@@ -62,7 +62,41 @@ final class GalleryInstaller {
         }
     }
 
-    var galleryURL: URL { live }
+    /// 用户在「文件」里手动指定的图库文件夹（保存为书签）
+    static var customRoot: URL? {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: "gallery.customRoot") else {
+                return nil
+            }
+            var stale = false
+            return try? URL(
+                resolvingBookmarkData: data,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+        }
+        set {
+            if let url = newValue,
+               let data = try? url.bookmarkData(
+                   options: [],
+                   includingResourceValuesForKeys: nil,
+                   relativeTo: nil
+               ) {
+                UserDefaults.standard.set(data, forKey: "gallery.customRoot")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "gallery.customRoot")
+            }
+        }
+    }
+
+    var galleryURL: URL {
+        if let custom = GalleryInstaller.customRoot,
+           FileManager.default.fileExists(atPath: custom.appendingPathComponent("index.json").path) {
+            return custom
+        }
+        return live
+    }
 
     var hasGallery: Bool {
         fileManager.fileExists(atPath: live.appendingPathComponent("index.json").path)

@@ -123,6 +123,7 @@ struct SettingsView: View {
                 Text("结果")
             }
 
+            GalleryLocationSection()
             LearningSection()
 
             Section {
@@ -206,6 +207,52 @@ struct LearningSection: View {
             message = "已导出 \(count) 个样本"
         } catch {
             message = "导出失败：\(error.localizedDescription)"
+        }
+    }
+}
+
+
+/// 图库文件夹：手动指定（放「我的 iPhone」自定义文件夹里）
+struct GalleryLocationSection: View {
+    @State private var picking = false
+    @State private var message = ""
+
+    private var currentPath: String {
+        if let url = GalleryInstaller.customRoot { return url.lastPathComponent }
+        return "默认（PicSeek/Gallery）"
+    }
+
+    var body: some View {
+        AppCard {
+            CardHeader(title: "图库文件夹", subtitle: currentPath)
+            Button("选择图库文件夹") { picking = true }
+                .buttonStyle(.plain)
+                .foregroundStyle(UI.orange)
+            if !message.isEmpty {
+                Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            Hint("选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）")
+        }
+        .fileImporter(
+            isPresented: $picking,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                let index = url.appendingPathComponent("index.json")
+                guard FileManager.default.fileExists(atPath: index.path) else {
+                    message = "该文件夹里没有 index.json"
+                    return
+                }
+                GalleryInstaller.customRoot = url
+                message = "已设为：\(url.lastPathComponent)"
+            case .failure(let error):
+                message = "选择失败：\(error.localizedDescription)"
+            }
         }
     }
 }
