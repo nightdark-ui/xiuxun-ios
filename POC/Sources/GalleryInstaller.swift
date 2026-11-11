@@ -62,16 +62,39 @@ final class GalleryInstaller {
         }
     }
 
+    /// 保持安全作用域访问（外部文件夹必须持有，否则读不到内容）
+    private static var scopedCustomURL: URL?
+
+    /// 申请并保持对外部图库文件夹的访问权限；App 启动时调用一次
+    @discardableResult
+    static func beginCustomAccess() -> URL? {
+        if let existing = scopedCustomURL { return existing }
+        guard let data = UserDefaults.standard.data(forKey: "gallery.customRoot") else {
+            return nil
+        }
+        var stale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [.withoutUI],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) else { return nil }
+        _ = url.startAccessingSecurityScopedResource()
+        scopedCustomURL = url
+        return url
+    }
+
     /// 用户在「文件」里手动指定的图库文件夹（保存为书签）
     static var customRoot: URL? {
         get {
+            if let active = beginCustomAccess() { return active }
             guard let data = UserDefaults.standard.data(forKey: "gallery.customRoot") else {
                 return nil
             }
             var stale = false
             return try? URL(
                 resolvingBookmarkData: data,
-                options: [],
+                options: [.withoutUI],
                 relativeTo: nil,
                 bookmarkDataIsStale: &stale
             )
@@ -84,6 +107,9 @@ final class GalleryInstaller {
                    relativeTo: nil
                ) {
                 UserDefaults.standard.set(data, forKey: "gallery.customRoot")
+                Self.scopedCustomURL = nil
+                _ = url.startAccessingSecurityScopedResource()
+                Self.scopedCustomURL = url
             } else {
                 UserDefaults.standard.removeObject(forKey: "gallery.customRoot")
             }
@@ -99,7 +125,7 @@ final class GalleryInstaller {
     }
 
     var hasGallery: Bool {
-        fileManager.fileExists(atPath: live.appendingPathComponent("index.json").path)
+        fileManager.fileExists(atPath: galleryURL.appendingPathComponent("index.json").path)
     }
 
     // MARK: - 安装

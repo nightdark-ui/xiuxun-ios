@@ -250,10 +250,17 @@ struct GalleryLocationSection: View {
                     return
                 }
                 GalleryInstaller.customRoot = url
+                GalleryInstaller.beginCustomAccess()
+                NotificationCenter.default.post(name: .galleryRootChanged, object: nil)
                 message = "已设为：\(url.lastPathComponent)"
             case .failure(let error):
                 message = "选择失败：\(error.localizedDescription)"
             }
         }
     }
+}
+
+
+extension Notification.Name {
+    static let galleryRootChanged = Notification.Name("galleryRootChanged")
 }

@@ -31,7 +31,17 @@ final class AppState: ObservableObject {
 
     init() {
         serverAddress = UserDefaults.standard.string(forKey: Self.addressKey) ?? ""
+        GalleryInstaller.beginCustomAccess()
         loadGallery()
+        NotificationCenter.default.addObserver(
+            forName: .galleryRootChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            self.loadGallery()
+            self.message = "已切换图库文件夹"
+        }
     }
 
     /// 启动时检查沙盒里的图库是否完整
