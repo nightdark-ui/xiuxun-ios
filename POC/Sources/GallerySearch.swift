@@ -327,7 +327,7 @@ final class GallerySearch {
         }
 
         // ---------- 3. base 重排 ----------
-        let baseLimit = options.deepReview ? 60 : 30
+        let baseLimit = 60
         let baseSize = options.deepReview ? 336 : options.baseInputSize
         var baseScores: [Int: Double] = [:]
         if ranked.count > 1 {
@@ -460,7 +460,7 @@ final class GallerySearch {
         if let queryImage = queryImage,
            let queryBytes = ImageOps.rgbaBytes(queryImage) {
             let siftStart = Date()
-            let topForSift = Array(ranked.prefix(30))
+            let topForSift = Array(ranked.prefix(60))
             var localScores: [Int: Double] = [:]
             for item in topForSift {
                 let design = package.designs[item.index]
@@ -483,7 +483,7 @@ final class GallerySearch {
             for index in 0..<adjusted.count {
                 let designIndex = adjusted[index].design.index
                 if let local = localScores[designIndex] {
-                    adjusted[index].score = 0.70 * adjusted[index].score + 0.30 * local
+                    adjusted[index].score = 0.62 * adjusted[index].score + 0.38 * local
                 }
             }
             finalList = adjusted.sorted { $0.score > $1.score }
