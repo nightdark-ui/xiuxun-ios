@@ -183,6 +183,7 @@ struct SearchView: View {
                 if model.busy { progressCard }
                 if !model.errorText.isEmpty { errorCard }
                 if let timings = model.timings { resultHeader(timings) }
+                if !model.hits.isEmpty { manualCard }
                 resultGrid
             }
             .padding(.horizontal, 14)
@@ -455,6 +456,53 @@ struct SearchView: View {
         lastConfirmedCode = hit.design.code
         lastConfirmedSampleID = LearningStore.shared.lastAddedSampleID
         model.note = "已记录学习样本：\(hit.design.code)（可点「撤回」撤销）"
+    }
+
+    @State private var manualCode = ""
+
+    /// 结果里没有正确款时，手动输入款号确认
+    private var manualCard: some View {
+        AppCard {
+            CardHeader(title: "没找到？手动确认")
+            HStack(spacing: 8) {
+                TextField("输入款号，如 9008", text: $manualCode)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .keyboardType(.numbersAndPunctuation)
+                Button("确认是这款") { confirmManual() }
+                    .buttonStyle(.plain)
+                    .foregroundColor(UI.orange)
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            if lastConfirmedSampleID != nil {
+                Button("撤回上次确认") { undoLearning() }
+                    .buttonStyle(.plain)
+                    .foregroundColor(UI.orange)
+                    .font(.system(size: 12))
+            }
+            if !model.note.isEmpty {
+                Text(model.note).font(.system(size: 11)).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func confirmManual() {
+        let code = manualCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, let features = QueryEncoder.lastFeatures else {
+            model.note = "请先搜索一次，再手动确认"
+            return
+        }
+        guard let design = app.package?.designs.first(where: { $0.code == code }) else {
+            model.note = "图库里没有款号 \(code)"
+            return
+        }
+        let cls = features.clsRows.flatMap { $0 }
+        let tiles = features.tileRows.flatMap { $0 }
+        _ = LearningStore.shared.addSample(featureUUID: design.featureUUID, cls: cls, tiles: tiles)
+        lastConfirmedCode = design.code
+        lastConfirmedSampleID = LearningStore.shared.lastAddedSampleID
+        model.note = "已记录学习样本：\(design.code)（可撤回）"
+        manualCode = ""
     }
 
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
