@@ -459,6 +459,7 @@ struct SearchView: View {
     }
 
     @State private var manualCode = ""
+    @State private var pendingDesign: DesignRef?
 
     /// 结果里没有正确款时，手动输入款号确认
     private var manualCard: some View {
@@ -469,10 +470,26 @@ struct SearchView: View {
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .keyboardType(.numbersAndPunctuation)
-                Button("确认是这款") { confirmManual() }
+                Button("查图") { lookupManual() }
                     .buttonStyle(.plain)
                     .foregroundColor(UI.orange)
                     .font(.system(size: 13, weight: .semibold))
+            }
+            if let pending = pendingDesign {
+                HStack(spacing: 10) {
+                    CachedThumb(url: app.package?.thumbURL(for: pending), height: 72)
+                        .frame(width: 72)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pending.code).font(.system(size: 14, weight: .semibold))
+                        Text(pending.libraryName ?? "").font(.system(size: 11)).foregroundColor(.secondary)
+                        Button("确认是这款") { confirmPending() }
+                            .buttonStyle(.plain)
+                            .foregroundColor(UI.orange)
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    Spacer()
+                }
             }
             if lastConfirmedSampleID != nil {
                 Button("撤回上次确认") { undoLearning() }
@@ -486,14 +503,23 @@ struct SearchView: View {
         }
     }
 
-    private func confirmManual() {
+    /// 第一步：按款号查出该款并预览
+    private func lookupManual() {
         let code = manualCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !code.isEmpty, let features = QueryEncoder.lastFeatures else {
-            model.note = "请先搜索一次，再手动确认"
+        guard !code.isEmpty else { return }
+        guard let design = app.package?.designs.first(where: { $0.code == code }) else {
+            pendingDesign = nil
+            model.note = "图库里没有款号 \(code)"
             return
         }
-        guard let design = app.package?.designs.first(where: { $0.code == code }) else {
-            model.note = "图库里没有款号 \(code)"
+        pendingDesign = design
+        model.note = "确认是 \(design.code) 吗？"
+    }
+
+    /// 第二步：确认加入学习
+    private func confirmPending() {
+        guard let design = pendingDesign, let features = QueryEncoder.lastFeatures else {
+            model.note = "请先搜索一次，再手动确认"
             return
         }
         let cls = features.clsRows.flatMap { $0 }
@@ -502,6 +528,7 @@ struct SearchView: View {
         lastConfirmedCode = design.code
         lastConfirmedSampleID = LearningStore.shared.lastAddedSampleID
         model.note = "已记录学习样本：\(design.code)（可撤回）"
+        pendingDesign = nil
         manualCode = ""
     }
 
