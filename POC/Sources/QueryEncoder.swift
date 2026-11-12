@@ -55,6 +55,9 @@ final class QueryEncoder {
 
     var smallLoadMs: Double { small.loadMs }
 
+    /// 最近一次查询特征（供「确认正确」记录学习样本用）
+    private(set) static var lastFeatures: QueryFeatures?
+
     /// 内存查询缓存（含 patchRows，App 重启即清空，不落盘）
     private static var memoryCache: [String: QueryFeatures] = [:]
     private static var memoryOrder: [String] = []
@@ -194,6 +197,7 @@ final class QueryEncoder {
         features.patchRows = patchRows
         saveCache(key: key, features: features)
         Self.memoryPut(key, features)
+        Self.lastFeatures = features
         return features
     }
 
