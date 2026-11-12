@@ -420,7 +420,7 @@ final class GallerySearch {
                            width: designBytes.width,
                            height: designBytes.height
                        ) else { return }
-                    siftScores[item.index] = CVLocalMatcher.matchFeatures(
+                    siftScores[item.index] = CVLocalMatcher.match(
                         queryFeatures,
                         against: designFeatures
                     )
