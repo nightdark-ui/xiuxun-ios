@@ -224,13 +224,29 @@ struct SearchView: View {
 
     private var heroCard: some View {
         HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("AI 找图，只认花型。")
-                    .font(.system(size: 20, weight: .bold))
+            VStack(alignment: .leading, spacing: 5) {
+                Text("—— PICSEEK / 花型检索")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(UI.orange)
+                Text("PicSeek，以图索号。")
+                    .font(.system(size: 21, weight: .bold))
                     .foregroundColor(UI.textPrimary)
-                Text("上传客户来图，秒找对应花型")
+                Text("客户的图偏色、斜拍、只露一角，拍下来就能查回编号")
                     .font(.system(size: 12))
                     .foregroundColor(UI.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    ForEach(["偏色可查", "斜拍可查", "断网可用"], id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 10))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(UI.orange.opacity(0.10))
+                            .foregroundColor(UI.orange)
+                            .clipShape(Capsule())
+                    }
+                }
+                .padding(.top, 2)
             }
             Spacer()
             Image(systemName: "sparkle.magnifyingglass")
