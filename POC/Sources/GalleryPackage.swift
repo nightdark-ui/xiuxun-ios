@@ -50,7 +50,9 @@ final class GalleryPackage {
     /// 该款全部图片的 URL（主图在前）
     func imageURLs(for design: DesignRef) -> [URL] {
         let names = imagesByCode[design.code] ?? [design.image]
-        return names.map { root.appendingPathComponent(images).appendingPathComponent() }
+        return names.map { name in
+            root.appendingPathComponent("images").appendingPathComponent(name)
+        }
     }
 
     init(root: URL) throws {
