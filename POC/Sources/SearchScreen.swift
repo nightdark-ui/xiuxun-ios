@@ -225,6 +225,9 @@ struct SearchView: View {
     private var heroCard: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
+                Text("—— PICSEEK / 花型检索")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(UI.orange)
                 Text("PicSeek，AI搜图。")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(UI.textPrimary)
