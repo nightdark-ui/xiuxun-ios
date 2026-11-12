@@ -7,15 +7,23 @@ struct GalleryReport {
     var recallOK = false
     var heavyOK = false
     var baseModelOK = false
+    var recallActualMB: Double = 0
+    var recallExpectedMB: Double = 0
+    var heavyActualMB: Double = 0
+    var uniqueCodes: Int = 0
+    var versionOK = true
+    var versionMessage = ""
     var missingImages: [String] = []
     var missingThumbs: [String] = []
     var checkedImages = 0
 
     var summary: String {
         var lines: [String] = []
-        lines.append("款数：\(designs)")
-        lines.append("recall.bin：\(recallOK ? "正常" : "异常")")
-        lines.append("heavy.bin：\(heavyOK ? "正常" : "异常")")
+        lines.append("款数：\(designs) 条记录 / \(uniqueCodes) 个款号")
+        lines.append(String(format: "recall.bin：%.1f MB（应为 %.1f MB）%@",
+                            recallActualMB, recallExpectedMB, recallOK ? " ✅" : " ❌"))
+        lines.append(String(format: "heavy.bin：%.1f MB%@", heavyActualMB, heavyOK ? " ✅" : " ❌"))
+        if !versionOK { lines.append("版本：\(versionMessage)") }
         lines.append("base 模型：\(baseModelOK ? "已就位" : "缺失（深度复排不可用）")")
         if missingImages.isEmpty && missingThumbs.isEmpty {
             lines.append("图片 / 缩略图：全部齐全（检查 \(checkedImages) 张）")
@@ -40,13 +48,27 @@ enum GalleryVerifier {
 
         // recall.bin 大小
         let recallURL = root.appendingPathComponent("recall.bin")
+        let expected = Int64(package.count * GalleryPackage.recallBytes)
+        report.recallExpectedMB = Double(expected) / 1024 / 1024
         if let size = fileSize(recallURL) {
-            report.recallOK = size == Int64(package.count * GalleryPackage.recallBytes)
+            report.recallActualMB = Double(size) / 1024 / 1024
+            report.recallOK = size == expected
         }
+
+        // 款号去重统计（一款多图时记录数 > 款号数）
+        var codes = Set<String>()
+        for design in package.designs { codes.insert(design.code) }
+        report.uniqueCodes = codes.count
+
+        // 版本校验
+        let version = GalleryVersionCheck.validate(indexURL: root.appendingPathComponent("index.json"))
+        report.versionOK = version.ok
+        report.versionMessage = version.message
 
         // heavy.bin：最后一款的偏移必须落在文件内
         let heavyURL = root.appendingPathComponent("heavy.bin")
         if let size = fileSize(heavyURL), let last = package.designs.last {
+            report.heavyActualMB = Double(size) / 1024 / 1024
             report.heavyOK = size > last.heavyOffset
         }
 
