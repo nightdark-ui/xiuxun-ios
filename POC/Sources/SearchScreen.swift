@@ -482,7 +482,6 @@ struct SearchView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pending.code).font(.system(size: 14, weight: .semibold))
-                        Text(pending.libraryName ?? "").font(.system(size: 11)).foregroundColor(.secondary)
                         Button("确认是这款") { confirmPending() }
                             .buttonStyle(.plain)
                             .foregroundColor(UI.orange)
