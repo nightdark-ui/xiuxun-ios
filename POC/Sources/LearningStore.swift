@@ -340,4 +340,47 @@ enum LearningError: LocalizedError {
         case .badZip: return "不是有效的 zip 文件"
         }
     }
+
+    /// 合并「内置包 + 本地确认」的参考分（按款 uuid 取最大）
+    func boostMap(queryRows: [[Float]]) -> [String: Double] {
+        if !bundledLoaded { loadBundled() }
+        var result = bundledBoostMap(queryRows: queryRows)
+        for sample in samples {
+            let rows = sample.clsRows
+            guard rows > 0, !queryRows.isEmpty else { continue }
+            var best = 0.0
+            for q in queryRows {
+                for r in 0..<rows {
+                    let offset = r * 384
+                    var dot = 0.0, nq = 0.0, nt = 0.0
+                    for i in 0..<384 {
+                        let qv = Double(q[i]), tv = Double(sample.cls[offset + i])
+                        dot += qv * tv; nq += qv * qv; nt += tv * tv
+                    }
+                    let value = dot / max(1e-9, (nq * nt).squareRoot())
+                    if value > best { best = value }
+                }
+            }
+            if best > (result[sample.featureUUID] ?? 0) {
+                result[sample.featureUUID] = best
+            }
+        }
+        return result
+    }
+
+    /// 记录一次人工确认（款 uuid + 当前查询特征）
+    @discardableResult
+    func addSample(featureUUID: String, cls: [Float], tiles: [Float]) -> Bool {
+        guard !featureUUID.isEmpty, cls.count % 384 == 0, !cls.isEmpty else { return false }
+        let sample = ReferenceSample(
+            featureUUID: featureUUID,
+            sampleID: local-\(Int(Date().timeIntervalSince1970)),
+            cls: cls,
+            tiles: tiles
+        )
+        samples.append(sample)
+        rebuildIndex()
+        save()
+        return true
+    }
 }
