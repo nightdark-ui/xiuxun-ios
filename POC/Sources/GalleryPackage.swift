@@ -38,6 +38,21 @@ final class GalleryPackage {
 
     var count: Int { designs.count }
 
+    /// 款号 → 该款全部图片文件名（主图在前）。一款多图时用于详情页展示。
+    private(set) lazy var imagesByCode: [String: [String]] = {
+        var map: [String: [String]] = [:]
+        for design in designs {
+            map[design.code, default: []].append(design.image)
+        }
+        return map
+    }()
+
+    /// 该款全部图片的 URL（主图在前）
+    func imageURLs(for design: DesignRef) -> [URL] {
+        let names = imagesByCode[design.code] ?? [design.image]
+        return names.map { root.appendingPathComponent(images).appendingPathComponent(\) }
+    }
+
     init(root: URL) throws {
         self.root = root
         let indexURL = root.appendingPathComponent("index.json")

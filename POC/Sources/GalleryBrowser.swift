@@ -145,14 +145,28 @@ struct DesignViewer: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    AsyncImage(url: package.imageURL(for: design)) { phase in
-                        if let image = phase.image {
-                            image.resizable().aspectRatio(contentMode: .fit)
-                        } else {
-                            CachedThumb(url: package.thumbURL(for: design), height: 260)
+                    // 一款多图：主图 + 补充图，可横向翻页
+                    let urls = package.imageURLs(for: design)
+                    TabView {
+                        ForEach(Array(urls.enumerated()), id: \.offset) { offset, url in
+                            AsyncImage(url: url) { phase in
+                                if let image = phase.image {
+                                    image.resizable().aspectRatio(contentMode: .fit)
+                                } else {
+                                    CachedThumb(url: package.thumbURL(for: design), height: 260)
+                                }
+                            }
                         }
                     }
+                    .tabViewStyle(.page(indexDisplayMode: urls.count > 1 ? .always : .never))
+                    .frame(height: 380)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                    if urls.count > 1 {
+                        Text("共 \(urls.count) 张（主图 + 补充 \(urls.count - 1)）")
+                            .font(.system(size: 11))
+                            .foregroundColor(UI.textSecondary)
+                    }
 
                     Text(design.code.isEmpty ? design.title : design.code)
                         .font(.system(size: 20, weight: .bold))
