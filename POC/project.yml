@@ -18,7 +18,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: PicSeek
+        CFBundleDisplayName: PicSeek 搜图
         UILaunchScreen:
           UIImageName: LaunchLogo
           UIColorName: LaunchBackground
