@@ -67,7 +67,7 @@ final class QueryEncoder {
             mirror: options.mirrorEnabled,
             fast: options.fastMode
         )
-        if let cached = Self.memoryCache[key] { return cached }
+        if false, let cached = loadCache(key: key) { return cached }
 
         var base = image
         if options.autoCrop {
@@ -170,7 +170,6 @@ final class QueryEncoder {
         var features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征")
         features.patchRows = patchRows
         saveCache(key: key, features: features)
-        Self.keepMemory(key: key, features: features)
         return features
     }
 
@@ -222,20 +221,6 @@ final class QueryEncoder {
             for i in 0..<result.count { result[i] = Float(Double(result[i]) / norm) }
         }
         return result
-    }
-
-    /// 内存缓存（含 patchRows，避免第二次搜索丢失 patch）
-    private static var memoryCache: [String: QueryFeatures] = [:]
-    private static var memoryOrder: [String] = []
-
-    private static func keepMemory(key: String, features: QueryFeatures) {
-        memoryCache[key] = features
-        memoryOrder.removeAll { \ == key }
-        memoryOrder.append(key)
-        while memoryOrder.count > 2, let oldest = memoryOrder.first {
-            memoryOrder.removeFirst()
-            memoryCache.removeValue(forKey: oldest)
-        }
     }
 
     private static func cacheKey(data: Data, rotation: Bool, mirror: Bool, fast: Bool) -> String {
