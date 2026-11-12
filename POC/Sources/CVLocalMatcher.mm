@@ -66,6 +66,17 @@ static cv::Mat grayFromRGBA(NSData *data, NSInteger width, NSInteger height) {
     storage->gray = gray;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create(0, 3, 0.04, 10.0, 1.6);
     sift->detectAndCompute(gray, cv::noArray(), storage->keypoints, storage->descriptors);
+
+    // PC 用的是 rootSIFT：L1 归一化后再开方（heavy.bin 里存的就是 rootSIFT）
+    if (!storage->descriptors.empty() && storage->descriptors.type() == CV_32F) {
+        for (int i = 0; i < storage->descriptors.rows; ++i) {
+            cv::Mat row = storage->descriptors.row(i);
+            double sum = cv::sum(row)[0];
+            if (sum <= 1e-7) { continue; }
+            row = row / (float)sum;
+            cv::sqrt(row, row);
+        }
+    }
     return features;
 }
 
