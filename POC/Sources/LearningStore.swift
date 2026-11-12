@@ -158,7 +158,18 @@ final class LearningStore {
 
     private func rebuildIndex() {
         byUUID = [:]
+        // 导出 = 内置样本 + 本地样本（并集，按 uuid+sampleID 去重）
+        if !bundledLoaded { loadBundled() }
+        var exportAll: [ReferenceSample] = bundled
+        var seen = Set<String>()
+        for sample in exportAll { seen.insert(sample.featureUUID + "|" + sample.sampleID) }
         for sample in samples {
+            let key = sample.featureUUID + "|" + sample.sampleID
+            if seen.contains(key) { continue }
+            seen.insert(key)
+            exportAll.append(sample)
+        }
+        for sample in exportAll {
             byUUID[sample.featureUUID, default: []].append(sample)
         }
     }
@@ -352,7 +363,7 @@ final class LearningStore {
             "format": "xiuxun-learning",
             "format_version": 1,
             "created_at": ISO8601DateFormatter().string(from: Date()),
-            "sample_count": samples.count,
+            "sample_count": samples.count + bundled.count,
             "design_count": uuidCount,
             "cls_rows": 10,
             "tile_rows": 9,
