@@ -399,32 +399,40 @@ final class GallerySearch {
                height: queryBytes.height
            ) {
             let topForSift = Array(ranked.prefix(poolLimit))
-            for item in topForSift {
-                let design = package.designs[item.index]
-                autoreleasepool {
-                    guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
-                          let raw = ImageOps.rgbaBytes(image, maxSide: 1280) else { return }
-                    var width = 512
-                    var height = 512
-                    guard let canonical = CVImaging.canonicalRGBA(
-                        raw.data,
-                        width: raw.width,
-                        height: raw.height,
-                        autoCrop: false,
-                        outWidth: &width,
-                        outHeight: &height
-                    ), let designImage = ImageOps.uiImageFromRGBA(canonical, width: width, height: height),
-                       let designBytes = ImageOps.rgbaBytes(designImage),
-                       let designFeatures = CVLocalMatcher.extractFeatures(
-                           designBytes.data,
-                           width: designBytes.width,
-                           height: designBytes.height
-                       ) else { return }
-                    siftScores[item.index] = CVLocalMatcher.match(
-                        queryFeatures,
-                        against: designFeatures
-                    )
+            let indices = topForSift.map { $0.index }
+            if !indices.isEmpty {
+                let results = UnsafeMutablePointer<Double>.allocate(capacity: indices.count)
+                results.initialize(repeating: 0, count: indices.count)
+                DispatchQueue.concurrentPerform(iterations: indices.count) { slot in
+                    let index = indices[slot]
+                    let design = package.designs[index]
+                    autoreleasepool {
+                        guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
+                              let raw = ImageOps.rgbaBytes(image, maxSide: 1280) else { return }
+                        var width = 512
+                        var height = 512
+                        guard let canonical = CVImaging.canonicalRGBA(
+                            raw.data,
+                            width: raw.width,
+                            height: raw.height,
+                            autoCrop: false,
+                            outWidth: &width,
+                            outHeight: &height
+                        ),
+                        let designImage = ImageOps.uiImageFromRGBA(canonical, width: width, height: height),
+                        let designBytes = ImageOps.rgbaBytes(designImage),
+                        let designFeatures = CVLocalMatcher.extractFeatures(
+                            designBytes.data,
+                            width: designBytes.width,
+                            height: designBytes.height
+                        ) else { return }
+                        results[slot] = CVLocalMatcher.match(queryFeatures, against: designFeatures)
+                    }
                 }
+                for (slot, index) in indices.enumerated() {
+                    siftScores[index] = results[slot]
+                }
+                results.deallocate()
             }
         }
 

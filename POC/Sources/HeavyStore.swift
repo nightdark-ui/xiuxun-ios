@@ -106,7 +106,7 @@ final class HeavyStore {
         }
 
         lock.lock()
-        if cache.count > 64 { cache.removeAll() }
+        if cache.count > 160 { cache.removeAll() }
         cache[key] = result
         lock.unlock()
         return result
