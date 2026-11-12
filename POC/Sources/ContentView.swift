@@ -9,23 +9,6 @@ struct ContentView: View {
         ZStack {
             TabView {
             NavigationView {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        header
-                        galleryCard
-                        probeEntry
-                    }
-                    .padding(20)
-                }
-                .navigationBarHidden(true)
-                .sheet(isPresented: $showProbe) {
-                    ProbePanelView()
-                }
-            }
-            .navigationViewStyle(.stack)
-            .tabItem { Label("图库", systemImage: "square.grid.2x2") }
-
-            NavigationView {
                 VStack(spacing: 8) {
                     if app.hasGallery {
                         SearchView(app: app)
@@ -41,8 +24,23 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
             .navigationViewStyle(.stack)
-            .tabItem { Label("搜索", systemImage: "magnifyingglass") }
-
+            .tabItem { Label("搜图", systemImage: "magnifyingglass") }
+            NavigationView {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        header
+                        galleryCard
+                        probeEntry
+                    }
+                    .padding(20)
+                }
+                .navigationBarHidden(true)
+                .sheet(isPresented: $showProbe) {
+                    ProbePanelView()
+                }
+            }
+            .navigationViewStyle(.stack)
+            .tabItem { Label("图库", systemImage: "square.grid.2x2") }
             NavigationView {
                 SettingsView()
             }
