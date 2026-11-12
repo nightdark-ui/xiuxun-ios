@@ -221,6 +221,54 @@ final class LearningStore {
     }
 
     /// 导入安卓学习包（zip）
+    /// 参考分：内置包 + 本地样本取最大（人工确认后立即生效）
+    func boostMap(queryRows: [[Float]]) -> [String: Double] {
+        var result = bundledBoostMap(queryRows: queryRows)
+        guard !queryRows.isEmpty else { return result }
+        for sample in samples {
+            let rows = sample.clsRows
+            guard rows > 0 else { continue }
+            var best = 0.0
+            for query in queryRows {
+                for row in 0..<rows {
+                    let offset = row * 384
+                    var dot = 0.0
+                    var normQuery = 0.0
+                    var normSample = 0.0
+                    for index in 0..<384 {
+                        let q = Double(query[index])
+                        let s = Double(sample.cls[offset + index])
+                        dot += q * s
+                        normQuery += q * q
+                        normSample += s * s
+                    }
+                    let value = dot / max(1e-9, (normQuery * normSample).squareRoot())
+                    if value > best { best = value }
+                }
+            }
+            if best > (result[sample.featureUUID] ?? 0) {
+                result[sample.featureUUID] = best
+            }
+        }
+        return result
+    }
+
+    /// 记录一次人工确认（款 uuid + 当前查询特征）
+    @discardableResult
+    func addSample(featureUUID: String, cls: [Float], tiles: [Float]) -> Bool {
+        guard !featureUUID.isEmpty, !cls.isEmpty, cls.count % 384 == 0 else { return false }
+        let sample = ReferenceSample(
+            featureUUID: featureUUID,
+            sampleID: "local-\(Int(Date().timeIntervalSince1970))",
+            cls: cls,
+            tiles: tiles
+        )
+        samples.append(sample)
+        rebuildIndex()
+        save()
+        return true
+    }
+
     func importPack(from url: URL) throws -> ImportResult {
         let data = try Data(contentsOf: url)
         guard let reader = ZipReader(data) else {
@@ -339,48 +387,5 @@ enum LearningError: LocalizedError {
         switch self {
         case .badZip: return "不是有效的 zip 文件"
         }
-    }
-
-    /// 合并「内置包 + 本地确认」的参考分（按款 uuid 取最大）
-    func boostMap(queryRows: [[Float]]) -> [String: Double] {
-        if !bundledLoaded { loadBundled() }
-        var result = bundledBoostMap(queryRows: queryRows)
-        for sample in samples {
-            let rows = sample.clsRows
-            guard rows > 0, !queryRows.isEmpty else { continue }
-            var best = 0.0
-            for q in queryRows {
-                for r in 0..<rows {
-                    let offset = r * 384
-                    var dot = 0.0, nq = 0.0, nt = 0.0
-                    for i in 0..<384 {
-                        let qv = Double(q[i]), tv = Double(sample.cls[offset + i])
-                        dot += qv * tv; nq += qv * qv; nt += tv * tv
-                    }
-                    let value = dot / max(1e-9, (nq * nt).squareRoot())
-                    if value > best { best = value }
-                }
-            }
-            if best > (result[sample.featureUUID] ?? 0) {
-                result[sample.featureUUID] = best
-            }
-        }
-        return result
-    }
-
-    /// 记录一次人工确认（款 uuid + 当前查询特征）
-    @discardableResult
-    func addSample(featureUUID: String, cls: [Float], tiles: [Float]) -> Bool {
-        guard !featureUUID.isEmpty, cls.count % 384 == 0, !cls.isEmpty else { return false }
-        let sample = ReferenceSample(
-            featureUUID: featureUUID,
-            sampleID: local-\(Int(Date().timeIntervalSince1970)),
-            cls: cls,
-            tiles: tiles
-        )
-        samples.append(sample)
-        rebuildIndex()
-        save()
-        return true
     }
 }
