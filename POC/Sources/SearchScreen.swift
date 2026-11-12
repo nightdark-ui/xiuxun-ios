@@ -406,25 +406,26 @@ struct SearchView: View {
         } else {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(Array(model.hits.enumerated()), id: \.offset) { index, hit in
-                    Button { detail = hit } label: {
-                        resultCell(hit: hit, rank: index + 1)
-                    }
-                    .buttonStyle(.plain)
-                    .overlay(alignment: .bottomTrailing) {
+                    VStack(spacing: 4) {
+                        Button { detail = hit } label: {
+                            resultCell(hit: hit, rank: index + 1)
+                        }
+                        .buttonStyle(.plain)
                         if index + 1 > 10 {
                             Button {
                                 confirmLearning(hit: hit)
                             } label: {
                                 Text("确认是这款")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .padding(.horizontal, 6).padding(.vertical, 3)
-                                    .background(UI.orange)
-                                    .foregroundColor(.white)
-                                    .clipShape(Capsule())
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 5)
+                                    .background(UI.orange.opacity(0.12))
+                                    .foregroundColor(UI.orange)
+                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                             }
                             .buttonStyle(.plain)
-                            .padding(4)
                         }
+                    }
                     }
                 }
             }
