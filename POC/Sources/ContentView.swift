@@ -28,7 +28,7 @@ struct ContentView: View {
             NavigationView {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        header
+                        BrandHeader()
                         galleryCard
                         probeEntry
                     }

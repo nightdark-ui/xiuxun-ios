@@ -16,15 +16,15 @@ struct SplashView: View {
                     .clipShape(Circle())
                     .overlay(Circle().stroke(UI.orange.opacity(0.25), lineWidth: 1))
 
-                Text("AI小助手")
-                    .font(.system(size: 26, weight: .bold))
+                Text("PicSeek 搜图")
+                    .font(.system(size: 23, weight: .bold))
                     .foregroundColor(UI.textPrimary)
 
                 Text("作者：Night")
                     .font(.system(size: 13))
                     .foregroundColor(UI.textSecondary)
 
-                Text("正在打开库存…")
+                Text("正在打开…")
                     .font(.system(size: 13))
                     .foregroundColor(UI.textSecondary)
                     .padding(.top, 6)

@@ -176,6 +176,7 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
+                BrandHeader()
                 heroCard
                 queryCard
                 scopeCard
