@@ -55,6 +55,29 @@ final class QueryEncoder {
 
     var smallLoadMs: Double { small.loadMs }
 
+    /// 内存查询缓存（含 patchRows，App 重启即清空，不落盘）
+    private static var memoryCache: [String: QueryFeatures] = [:]
+    private static var memoryOrder: [String] = []
+    private static let memoryLock = NSLock()
+
+    private static func memoryGet(_ key: String) -> QueryFeatures? {
+        memoryLock.lock()
+        defer { memoryLock.unlock() }
+        return memoryCache[key]
+    }
+
+    private static func memoryPut(_ key: String, _ features: QueryFeatures) {
+        memoryLock.lock()
+        defer { memoryLock.unlock() }
+        memoryCache[key] = features
+        memoryOrder.removeAll { $0 == key }
+        memoryOrder.append(key)
+        while memoryOrder.count > 2, let oldest = memoryOrder.first {
+            memoryOrder.removeFirst()
+            memoryCache.removeValue(forKey: oldest)
+        }
+    }
+
     /// 编码一张查询图（内部按 8 旋转 × 10 尺度 + 9 tile 批量推理）
     func encode(
         enhancedGray image: PilImaging.GrayImage,
@@ -67,7 +90,7 @@ final class QueryEncoder {
             mirror: options.mirrorEnabled,
             fast: options.fastMode
         )
-        if false, let cached = loadCache(key: key) { return cached }
+        if let cached = Self.memoryGet(key) { return cached }
 
         var base = image
         if options.autoCrop {
@@ -170,6 +193,7 @@ final class QueryEncoder {
         var features = QueryFeatures(clsRows: clsRows, tileRows: tileRows, label: "查询特征")
         features.patchRows = patchRows
         saveCache(key: key, features: features)
+        Self.memoryPut(key, features)
         return features
     }
 
