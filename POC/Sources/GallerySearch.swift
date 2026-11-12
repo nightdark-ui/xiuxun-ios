@@ -383,29 +383,48 @@ final class GallerySearch {
         }
         let globalQuery = PCGlobal.describe(structure: structureBytes, side: 512)
 
-        // SIFT：查询只算一次；设计侧直接读 heavy.bin 里缓存的 kp/desc（不解码、不检测）
+        // SIFT：查询（canonical）算一次；设计图解码后按 canonical 重算（精度优先）
         var siftScores: [Int: Double] = [:]
-        if let canonical = canonicalBytes,
-           let queryImage512 = ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512),
-           let queryBytes = ImageOps.rgbaBytes(queryImage512),
+        let siftQueryImage: UIImage? = {
+            if let canonical = canonicalBytes {
+                return ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512)
+            }
+            return queryImage
+        }()
+        if let siftQueryImage = siftQueryImage,
+           let queryBytes = ImageOps.rgbaBytes(siftQueryImage),
            let queryFeatures = CVLocalMatcher.extractFeatures(
                queryBytes.data,
                width: queryBytes.width,
                height: queryBytes.height
-           ),
-           let heavy = heavy {
+           ) {
             let topForSift = Array(ranked.prefix(poolLimit))
             for item in topForSift {
                 let design = package.designs[item.index]
-                guard let features = heavy.features(at: design.heavyOffset),
-                      !features.siftDescriptors.isEmpty else { continue }
-                let descData = features.siftDescriptors.withUnsafeBufferPointer { Data(buffer: $0) }
-                let kpData = features.siftKeypoints.withUnsafeBufferPointer { Data(buffer: $0) }
-                siftScores[item.index] = CVLocalMatcher.match(
-                    queryFeatures,
-                    designKeypoints: kpData,
-                    designDescriptors: descData
-                )
+                autoreleasepool {
+                    guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
+                          let raw = ImageOps.rgbaBytes(image, maxSide: 1280) else { return }
+                    var width = 512
+                    var height = 512
+                    guard let canonical = CVImaging.canonicalRGBA(
+                        raw.data,
+                        width: raw.width,
+                        height: raw.height,
+                        autoCrop: false,
+                        outWidth: &width,
+                        outHeight: &height
+                    ), let designImage = ImageOps.uiImageFromRGBA(canonical, width: width, height: height),
+                       let designBytes = ImageOps.rgbaBytes(designImage),
+                       let designFeatures = CVLocalMatcher.extractFeatures(
+                           designBytes.data,
+                           width: designBytes.width,
+                           height: designBytes.height
+                       ) else { return }
+                    siftScores[item.index] = CVLocalMatcher.matchFeatures(
+                        queryFeatures,
+                        against: designFeatures
+                    )
+                }
             }
         }
 
