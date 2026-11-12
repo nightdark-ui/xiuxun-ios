@@ -254,7 +254,6 @@ final class LearningStore {
     }
 
     /// 记录一次人工确认（款 uuid + 当前查询特征）
-    @discardableResult
     private(set) var lastAddedSampleID: String?
 
     /// 撤回最近一次确认
