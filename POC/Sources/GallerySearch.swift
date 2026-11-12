@@ -174,19 +174,7 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            // 去重：同一款号只保留最高分（图库数据里存在重号）
-        do {
-            var seenCodes = Set<String>()
-            var unique: [SearchHit] = []
-            unique.reserveCapacity(finalList.count)
-            for hit in finalList where !seenCodes.contains(hit.design.code) {
-                seenCodes.insert(hit.design.code)
-                unique.append(hit)
-            }
-            finalList = unique
-        }
-
-        timings.totalMs = Date().timeIntervalSince(started) * 1000
+            timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
@@ -490,7 +478,7 @@ final class GallerySearch {
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
-        return SearchOutcome(hits: Array(finalList.prefix(max(1, options.resultCount))), timings: timings, note: note)
+        return SearchOutcome(hits: Self.dedupeByCode(Array(finalList.prefix(max(1, options.resultCount)))), timings: timings, note: note)
     }
 
     /// 从编号里取出数字部分（SL9015 → 9015）
@@ -579,5 +567,17 @@ final class GallerySearch {
             normB += y * y
         }
         return dot / max(1e-9, sqrt(normA) * sqrt(normB))
+    }
+
+    /// 同一款号只保留分数最高的一条（图库存在一款多图）
+    static func dedupeByCode(_ hits: [SearchHit]) -> [SearchHit] {
+        var seen = Set<String>()
+        var output: [SearchHit] = []
+        output.reserveCapacity(hits.count)
+        for hit in hits where !seen.contains(hit.design.code) {
+            seen.insert(hit.design.code)
+            output.append(hit)
+        }
+        return output
     }
 }
