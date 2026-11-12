@@ -11,7 +11,10 @@ import Foundation
 final class HeavyStore {
     static let tileRows = 25
     static let dim = 384
-    static let edgeSize = 6400
+    /// edge 在文件里是 160×160 uint8 = 25,600 字节，
+    /// 占 6400 个 float 的存储位置（偏移计算不变）
+    static let edgeBytes = 160 * 160
+    static let edgeSize = 6400   // 仅用于偏移：edgeBytes / 4
     static let fmCount = 256
     static let lbpCount = 20
     static let oriCount = 14
@@ -74,7 +77,18 @@ final class HeavyStore {
                 return slice
             }
             result.tiles5 = take(Self.tileRows * Self.dim)
-            result.edge = take(Self.edgeSize)
+            // edge：25600 字节 uint8 → Float（0…255）
+            let edgeByteOffset = Int(offset) + Self.tileRows * Self.dim * 4
+            if edgeByteOffset + Self.edgeBytes <= data.count {
+                data.withUnsafeBytes { raw in
+                    guard let ptr = raw.baseAddress?.advanced(by: edgeByteOffset) else { return }
+                    let bytes = ptr.assumingMemoryBound(to: UInt8.self)
+                    var values = [Float](repeating: 0, count: Self.edgeBytes)
+                    for i in 0..<Self.edgeBytes { values[i] = Float(bytes[i]) }
+                    result.edge = values
+                }
+            }
+            cursor += Self.edgeSize   // 跳过 6400 个 float 位置（=25600 字节）
             result.fm = take(Self.fmCount)
             result.lbp = take(Self.lbpCount)
             result.ori = take(Self.oriCount)
