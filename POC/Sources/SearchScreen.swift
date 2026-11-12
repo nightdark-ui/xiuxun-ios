@@ -402,9 +402,38 @@ struct SearchView: View {
                         resultCell(hit: hit, rank: index + 1)
                     }
                     .buttonStyle(.plain)
+                    .overlay(alignment: .bottomTrailing) {
+                        if index + 1 > 10 {
+                            Button {
+                                confirmLearning(hit: hit)
+                            } label: {
+                                Text("确认")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 3)
+                                    .background(UI.orange)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(4)
+                        }
+                    }
                 }
             }
         }
+    }
+
+    /// 记录「确认正确」：把当前查询特征绑定到这一款
+    private func confirmLearning(hit: SearchHit) {
+        guard let features = QueryEncoder.lastFeatures else { return }
+        let cls = features.clsRows.flatMap { $0 }
+        let tiles = features.tileRows.flatMap { $0 }
+        _ = LearningStore.shared.addSample(
+            featureUUID: hit.design.featureUUID,
+            cls: cls,
+            tiles: tiles
+        )
+        model.note = "已记录学习样本：\(hit.design.code)"
     }
 
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
