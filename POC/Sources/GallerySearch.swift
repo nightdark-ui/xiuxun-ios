@@ -407,19 +407,28 @@ final class GallerySearch {
                     let index = indices[slot]
                     let design = package.designs[index]
                     autoreleasepool {
-                        guard let image = UIImage(contentsOfFile: package.imageURL(for: design).path),
-                              let raw = ImageOps.rgbaBytes(image, maxSide: 1280) else { return }
-                        var width = 512
-                        var height = 512
-                        guard let canonical = CVImaging.canonicalRGBA(
-                            raw.data,
-                            width: raw.width,
-                            height: raw.height,
-                            autoCrop: false,
-                            outWidth: &width,
-                            outHeight: &height
-                        ),
-                        let designImage = ImageOps.uiImageFromRGBA(canonical, width: width, height: height),
+                        let path = package.imageURL(for: design).path
+                        let canonicalData: Data? = {
+                            if let cached = DesignCanonicalCache.shared.image(path: path) {
+                                return cached
+                            }
+                            guard let image = UIImage(contentsOfFile: path),
+                                  let raw = ImageOps.rgbaBytes(image, maxSide: 1280) else { return nil }
+                            var width = 512
+                            var height = 512
+                            guard let value = CVImaging.canonicalRGBA(
+                                raw.data,
+                                width: raw.width,
+                                height: raw.height,
+                                autoCrop: false,
+                                outWidth: &width,
+                                outHeight: &height
+                            ) else { return nil }
+                            DesignCanonicalCache.shared.store(path: path, data: value)
+                            return value
+                        }()
+                        guard let canonical = canonicalData,
+                              let designImage = ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512),
                         let designBytes = ImageOps.rgbaBytes(designImage),
                         let designFeatures = CVLocalMatcher.extractFeatures(
                             designBytes.data,
