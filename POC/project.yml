@@ -12,13 +12,16 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+      - path: Assets.xcassets
       - path: Resources
         buildPhase: resources
     info:
       path: Info.plist
       properties:
         CFBundleDisplayName: PicSeek
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIImageName: LaunchLogo
+          UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         NSCameraUsageDescription: 需要相机拍摄客户来图进行搜索
@@ -35,6 +38,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_BITCODE: "NO"
         CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_OBJC_BRIDGING_HEADER: Sources/BridgingHeader.h
         FRAMEWORK_SEARCH_PATHS:
           - $(inherited)
