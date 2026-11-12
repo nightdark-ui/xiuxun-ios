@@ -50,7 +50,7 @@ final class GalleryPackage {
     /// 该款全部图片的 URL（主图在前）
     func imageURLs(for design: DesignRef) -> [URL] {
         let names = imagesByCode[design.code] ?? [design.image]
-        return names.map { root.appendingPathComponent(images).appendingPathComponent(\) }
+        return names.map { root.appendingPathComponent(images).appendingPathComponent() }
     }
 
     init(root: URL) throws {
@@ -104,7 +104,7 @@ final class GalleryPackage {
         let expected = designs.count * Self.recallBytes
         guard mapped.count >= expected else {
             throw GalleryError.badIndex(
-                "recall.bin 大小 \(mapped.count) 与款数 \(designs.count) 不符（应为 \(expected)）"
+                "recall.bin 大小 (mapped.count) 与款数 (designs.count) 不符（应为 (expected)）"
             )
         }
         self.recall = mapped
@@ -154,8 +154,8 @@ enum GalleryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingIndex: return "这个文件夹里没有 index.json，选的不是图库包"
-        case .missingFile(let name): return "图库包缺少 \(name)"
-        case .badIndex(let reason): return "index.json 有问题：\(reason)"
+        case .missingFile(let name): return "图库包缺少 (name)"
+        case .badIndex(let reason): return "index.json 有问题：(reason)"
         }
     }
 }
