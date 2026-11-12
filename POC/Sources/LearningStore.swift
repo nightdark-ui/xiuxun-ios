@@ -255,6 +255,19 @@ final class LearningStore {
 
     /// 记录一次人工确认（款 uuid + 当前查询特征）
     @discardableResult
+    private(set) var lastAddedSampleID: String?
+
+    /// 撤回最近一次确认
+    @discardableResult
+    func removeSample(sampleID: String) -> Bool {
+        guard let index = samples.firstIndex(where: { $0.sampleID == sampleID }) else { return false }
+        samples.remove(at: index)
+        rebuildIndex()
+        save()
+        if lastAddedSampleID == sampleID { lastAddedSampleID = nil }
+        return true
+    }
+
     func addSample(featureUUID: String, cls: [Float], tiles: [Float]) -> Bool {
         guard !featureUUID.isEmpty, !cls.isEmpty, cls.count % 384 == 0 else { return false }
         let sample = ReferenceSample(
@@ -266,6 +279,7 @@ final class LearningStore {
         samples.append(sample)
         rebuildIndex()
         save()
+        lastAddedSampleID = sample.sampleID
         return true
     }
 

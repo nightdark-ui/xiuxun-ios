@@ -374,6 +374,13 @@ struct SearchView: View {
                     .font(.system(size: 12))
                     .foregroundColor(UI.textSecondary)
             }
+            if lastConfirmedSampleID != nil {
+                Button { undoLearning() } label: {
+                    Text("撤回上次确认").font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(UI.orange)
+            }
             if !model.note.isEmpty {
                 Text(model.note)
                     .font(.system(size: 11))
@@ -407,7 +414,7 @@ struct SearchView: View {
                             Button {
                                 confirmLearning(hit: hit)
                             } label: {
-                                Text("确认")
+                                Text("确认是这款")
                                     .font(.system(size: 10, weight: .semibold))
                                     .padding(.horizontal, 6).padding(.vertical, 3)
                                     .background(UI.orange)
@@ -423,7 +430,19 @@ struct SearchView: View {
         }
     }
 
-    /// 记录「确认正确」：把当前查询特征绑定到这一款
+    @State private var lastConfirmedCode: String?
+    @State private var lastConfirmedSampleID: String?
+
+    /// 撤回最近一次确认
+    private func undoLearning() {
+        guard let sampleID = lastConfirmedSampleID else { return }
+        _ = LearningStore.shared.removeSample(sampleID: sampleID)
+        model.note = "已撤回确认：\(lastConfirmedCode ?? "")"
+        lastConfirmedSampleID = nil
+        lastConfirmedCode = nil
+    }
+
+    /// 记录「确认是这款」：把当前查询特征绑定到这一款
     private func confirmLearning(hit: SearchHit) {
         guard let features = QueryEncoder.lastFeatures else { return }
         let cls = features.clsRows.flatMap { $0 }
@@ -433,7 +452,9 @@ struct SearchView: View {
             cls: cls,
             tiles: tiles
         )
-        model.note = "已记录学习样本：\(hit.design.code)"
+        lastConfirmedCode = hit.design.code
+        lastConfirmedSampleID = LearningStore.shared.lastAddedSampleID
+        model.note = "已记录学习样本：\(hit.design.code)（可点「撤回」撤销）"
     }
 
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
