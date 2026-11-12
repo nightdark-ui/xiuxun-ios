@@ -29,6 +29,8 @@ struct ContentView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         BrandHeader()
+                        archiveHero
+                        archiveStats
                         galleryCard
                         probeEntry
                     }
@@ -59,6 +61,57 @@ struct ContentView: View {
                 withAnimation(.easeInOut(duration: 0.3)) { showSplash = false }
             }
         }
+    }
+
+    /// 图库页大标题（对齐安卓版「花型图库，以图导样。」）
+    private var archiveHero: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("—— ARCHIVE / 图库")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(UI.orange)
+            HStack(spacing: 0) {
+                Text("花型图库，")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(UI.textPrimary)
+                Text("以图导样。")
+                    .font(.system(size: 26, weight: .bold))
+                    .foregroundColor(UI.orange)
+            }
+            Text("你的绣花花型档案。上传后自动建立视觉索引，客户来图即可找回编号。")
+                .font(.system(size: 12))
+                .foregroundColor(UI.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            LinearGradient(colors: [UI.orange.opacity(0.10), UI.orange.opacity(0.02)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: UI.radius, style: .continuous))
+    }
+
+    /// 两个统计卡：花型总数 / 图案分类
+    private var archiveStats: some View {
+        HStack(spacing: 10) {
+            statCard(value: "\(app.galleryCount)", caption: "花型总数")
+            statCard(value: "\(app.libraries.count)", caption: "图案分类")
+        }
+    }
+
+    private func statCard(value: String, caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(.system(size: 28, weight: .bold))
+                .foregroundColor(UI.textPrimary)
+            Text(caption)
+                .font(.system(size: 11))
+                .foregroundColor(UI.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var header: some View {

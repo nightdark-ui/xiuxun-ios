@@ -87,6 +87,9 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                BrandHeader()
+            }
+            Section {
                 Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
                 Toggle("自动裁切主体", isOn: $settings.autoCrop)
                 Toggle("循环花型增强（实验，较慢）", isOn: $settings.allowRepeat)
