@@ -264,12 +264,21 @@ struct SearchView: View {
                         .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 } else {
-                    Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 26))
-                        .foregroundColor(UI.orange.opacity(0.7))
-                    Text("选择或拍摄一张花型图")
-                        .font(.system(size: 12))
+                    Image(systemName: "magnifyingglass.circle")
+                        .font(.system(size: 40))
+                        .foregroundColor(UI.orange.opacity(0.75))
+                        .padding(.top, 6)
+                    Text("上传客户来图")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(UI.textPrimary)
+                        .padding(.top, 2)
+                    Text("点击选择图片\n相册、拍照、截图都可以")
+                        .font(.system(size: 11))
                         .foregroundColor(UI.textSecondary)
+                        .multilineTextAlignment(.center)
+                    Text("颜色自动忽略 · 局部 / 整图都可")
+                        .font(.system(size: 10))
+                        .foregroundColor(UI.orange.opacity(0.85))
                 }
                 HStack(spacing: 10) {
                     Button { showPicker = true } label: {
