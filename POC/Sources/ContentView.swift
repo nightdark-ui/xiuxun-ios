@@ -3,9 +3,11 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var app = AppState()
     @State private var showProbe = false
+    @State private var showSplash = true
 
     var body: some View {
-        TabView {
+        ZStack {
+            TabView {
             NavigationView {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -46,6 +48,18 @@ struct ContentView: View {
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("设置", systemImage: "gearshape") }
+            }
+
+            if showSplash {
+                SplashView()
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+                withAnimation(.easeInOut(duration: 0.3)) { showSplash = false }
+            }
         }
     }
 
