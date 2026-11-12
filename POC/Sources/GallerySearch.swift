@@ -174,7 +174,19 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            timings.totalMs = Date().timeIntervalSince(started) * 1000
+            // 去重：同一款号只保留最高分（图库数据里存在重号）
+        do {
+            var seenCodes = Set<String>()
+            var unique: [SearchHit] = []
+            unique.reserveCapacity(finalList.count)
+            for hit in finalList where !seenCodes.contains(hit.design.code) {
+                seenCodes.insert(hit.design.code)
+                unique.append(hit)
+            }
+            finalList = unique
+        }
+
+        timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 

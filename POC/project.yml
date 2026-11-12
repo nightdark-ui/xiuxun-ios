@@ -21,6 +21,8 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        NSCameraUsageDescription: 需要相机拍摄客户来图进行搜索
+        NSPhotoLibraryUsageDescription: 需要访问相册选择客户来图
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
         NSLocalNetworkUsageDescription: 需要访问局域网，从电脑传输图库包
