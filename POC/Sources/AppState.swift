@@ -53,6 +53,16 @@ final class AppState: ObservableObject {
             return
         }
         do {
+            // 版本校验：不兼容时明确提示，避免用错特征给出错误结果
+            let indexURL = installer.galleryURL.appendingPathComponent("index.json")
+            let version = GalleryVersionCheck.validate(indexURL: indexURL)
+            guard version.ok else {
+                package = nil
+                galleryCount = 0
+                libraries = []
+                errorText = version.message
+                return
+            }
             let opened = try GalleryPackage(root: installer.galleryURL)
             package = opened
             galleryCount = opened.count
