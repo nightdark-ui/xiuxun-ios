@@ -225,6 +225,46 @@ struct SearchView: View {
 
     // MARK: - 卡片
 
+
+    /// 搜索中的全屏进度弹窗
+    private var searchOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.28).ignoresSafeArea()
+
+            VStack(spacing: 14) {
+                ProgressView()
+                    .scaleEffect(1.3)
+                    .tint(UI.orange)
+
+                Text(model.progressText.isEmpty ? "正在搜索…" : model.progressText)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(UI.textPrimary)
+
+                Text("正在比对花型，请稍候")
+                    .font(.system(size: 11))
+                    .foregroundColor(UI.textSecondary)
+
+                Button {
+                    model.cancel()
+                } label: {
+                    Text("取消搜索")
+                        .font(.system(size: 13, weight: .semibold))
+                        .padding(.horizontal, 20).padding(.vertical, 9)
+                        .background(UI.orange.opacity(0.14))
+                        .foregroundColor(UI.orange)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(26)
+            .frame(width: 260)
+            .background(.regularMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.15), radius: 20, y: 8)
+        }
+        .transition(.opacity)
+    }
+
     private var heroCard: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
@@ -355,7 +395,7 @@ struct SearchView: View {
                         .buttonStyle(.plain)
                         .disabled(settings.libraryFilter.isEmpty)
                     }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 8)], spacing: 8) {
                         ForEach(Array(app.libraryInfos.enumerated()), id: \.offset) { pair in
                             libraryChip(pair.element)
                         }
@@ -383,14 +423,24 @@ struct SearchView: View {
                 settings.libraryFilter.insert(item.name)
             }
         } label: {
-            Text("\(item.name) \(item.count)")
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                .padding(.horizontal, 8).padding(.vertical, 5)
+            HStack {
+                Text(item.name)
+                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                Spacer()
+                Text("\(item.count)")
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(selected ? UI.orange : UI.textSecondary)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15))
+                    .foregroundColor(selected ? UI.orange : UI.textSecondary.opacity(0.5))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 12)
                 .frame(maxWidth: .infinity)
                 .background(selected ? UI.orange.opacity(0.14) : UI.cardBackground)
                 .foregroundColor(selected ? UI.orange : UI.textSecondary)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(selected ? UI.orange.opacity(0.6) : Color.black.opacity(0.08), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .disabled(model.busy)

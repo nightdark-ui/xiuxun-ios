@@ -120,6 +120,15 @@ final class GallerySearch {
         let fromNumber = Self.codeNumber(options.codeFrom)
         let toNumber = Self.codeNumber(options.codeTo)
         let useCodeRange = fromNumber != nil || toNumber != nil
+        // 前缀：SL1001-SL2000 只在 SL 里找；TM001-TM299 只在 TM 里找
+        let fromPrefix = Self.codePrefix(options.codeFrom)
+        let toPrefix = Self.codePrefix(options.codeTo)
+        let rangePrefix: String? = {
+            if !fromPrefix.isEmpty && !toPrefix.isEmpty {
+                return fromPrefix == toPrefix ? fromPrefix : nil
+            }
+            return fromPrefix.isEmpty ? (toPrefix.isEmpty ? nil : toPrefix) : fromPrefix
+        }()
 
         package.withRecallPointer { base, count in
             for index in 0..<count {
@@ -128,6 +137,7 @@ final class GallerySearch {
                 if useLibraryFilter && !allowedLibraries.contains(design.library) { continue }
                 if useCodeRange {
                     guard let number = Self.codeNumber(design.code) else { continue }
+                    if let prefix = rangePrefix, Self.codePrefix(design.code) != prefix { continue }
                     if let low = fromNumber, number < low { continue }
                     if let high = toNumber, number > high { continue }
                 }
@@ -530,6 +540,11 @@ final class GallerySearch {
     }
 
     /// 从编号里取出数字部分（SL9015 → 9015）
+    /// 拆分编号为（字母前缀, 数字），如 SL1001 -> ("SL", 1001)、TM001 -> ("TM", 1)
+    static func codePrefix(_ code: String) -> String {
+        String(code.uppercased().prefix { !$0.isNumber })
+    }
+
     static func codeNumber(_ code: String) -> Int? {
         let digits = code.compactMap { $0.isNumber ? $0 : nil }
         guard !digits.isEmpty else { return nil }
