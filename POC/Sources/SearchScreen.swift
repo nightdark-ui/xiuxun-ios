@@ -198,7 +198,10 @@ struct SearchView: View {
             ImagePicker(sourceType: .photoLibrary) { cropImage = $0 }
         }
         .sheet(isPresented: $showCamera) {
-            ImagePicker(sourceType: .camera) { cropImage = $0 }
+            CameraView { image in
+                cropImage = image
+                showCamera = false
+            }
         }
         .sheet(isPresented: Binding(
             get: { cropImage != nil },
