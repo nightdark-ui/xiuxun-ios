@@ -159,7 +159,7 @@ struct LearningSection: View {
             HStack {
                 Text("学习样本")
                 Spacer()
-                Text("(LearningStore.shared.totalSamples) 个 / (LearningStore.shared.uuidCount) 款")
+                Text("\(LearningStore.shared.totalSamples) 个 / \(LearningStore.shared.uuidCount) 款")
                     .foregroundColor(.secondary)
             }
 
@@ -171,7 +171,7 @@ struct LearningSection: View {
         } header: {
             Text("参考学习")
         } footer: {
-            Text("参考学习已内置 (LearningStore.shared.bundledCount) 条样本；命中时按 max(AI, 学习分) 抬升，不降权。")
+            Text("参考学习已内置 \(LearningStore.shared.bundledCount) 条样本；命中时按 max(AI, 学习分) 抬升，不降权。")
                 .font(.caption2)
         }
         .fileImporter(
@@ -188,13 +188,13 @@ struct LearningSection: View {
                     let outcome = try LearningStore.shared.importPack(from: url)
                     message = outcome.message
                 } catch {
-                    message = "导入失败：(error.localizedDescription)"
+                    message = "导入失败：\(error.localizedDescription)"
                 }
             case .failure(let error):
-                message = "选择文件失败：(error.localizedDescription)"
+                message = "选择文件失败：\(error.localizedDescription)"
             }
         }
-        .sheet(isPresented: $showProbe) { ProbePanelView() }
+        .sheet(isPresented: $exporting) {
             if let url = exportURL {
                 ShareSheet(items: [url])
             }
@@ -211,9 +211,9 @@ struct LearningSection: View {
             let count = try LearningStore.shared.exportPack(to: url)
             exportURL = url
             exporting = true
-            message = "已导出 (count) 个样本"
+            message = "已导出 \(count) 个样本"
         } catch {
-            message = "导出失败：(error.localizedDescription)"
+            message = "导出失败：\(error.localizedDescription)"
         }
     }
 }
@@ -259,9 +259,9 @@ struct GalleryLocationSection: View {
                 GalleryInstaller.customRoot = url
                 GalleryInstaller.beginCustomAccess()
                 NotificationCenter.default.post(name: .galleryRootChanged, object: nil)
-                message = "已设为：(url.lastPathComponent)"
+                message = "已设为：\(url.lastPathComponent)"
             case .failure(let error):
-                message = "选择失败：(error.localizedDescription)"
+                message = "选择失败：\(error.localizedDescription)"
             }
         }
     }
