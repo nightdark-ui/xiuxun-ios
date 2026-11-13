@@ -199,6 +199,12 @@ struct SearchView: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
+            .onChange(of: model.hits.count) { count in
+                guard count > 0, !model.busy else { return }
+                withAnimation(.easeInOut(duration: 0.35)) {
+                    proxy.scrollTo("resultsTop", anchor: .top)
+                }
+            }
             .id("resultsTop")
         }
         .background(UI.pageBackground.ignoresSafeArea())
@@ -236,12 +242,6 @@ struct SearchView: View {
                 ResultDetail(hit: hit, package: app.package, queryImage: model.queryThumb, rank: detailRank)
             }
         }
-        }
-        .onChange(of: model.hits.count) { count in
-            guard count > 0, !model.busy else { return }
-            withAnimation(.easeInOut(duration: 0.35)) {
-                proxy.scrollTo("resultsTop", anchor: .top)
-            }
         }
     }
 
