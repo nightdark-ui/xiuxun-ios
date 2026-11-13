@@ -186,6 +186,7 @@ struct SearchView: View {
                 if let timings = model.timings { resultHeader(timings) }
                 if !model.hits.isEmpty { manualCard }
                 resultGrid
+                if !model.hits.isEmpty { deepReviewAgain }
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
@@ -459,26 +460,10 @@ struct SearchView: View {
         } else {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(Array(model.hits.enumerated()), id: \.offset) { index, hit in
-                    VStack(spacing: 4) {
-                        Button { detail = hit } label: {
-                            resultCell(hit: hit, rank: index + 1)
-                        }
-                        .buttonStyle(.plain)
-                        if index + 1 > 10 {
-                            Button {
-                                confirmLearning(hit: hit)
-                            } label: {
-                                Text("确认是这款")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 5)
-                                    .background(UI.orange.opacity(0.12))
-                                    .foregroundColor(UI.orange)
-                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    Button { detail = hit } label: {
+                        resultCell(hit: hit, rank: index + 1)
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
@@ -584,6 +569,36 @@ struct SearchView: View {
         manualCode = ""
     }
 
+    /// 结果不满意时，用深度复核（100 候选 + base336）再搜一次
+    private var deepReviewAgain: some View {
+        VStack(spacing: 6) {
+            Button {
+                guard let image = model.queryThumb else { return }
+                settings.deepReview = true
+                if let package = app.package { model.run(image: image, package: package) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise.circle")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(model.busy ? "正在深度复核…" : "结果不满意？用深度复核再搜一次")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(UI.orange.opacity(0.12))
+                .foregroundColor(UI.orange)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(model.busy || model.queryThumb == nil)
+
+            Text("深度复核：候选 100 个，base 336 输入，更准但慢约 40%")
+                .font(.system(size: 10))
+                .foregroundColor(UI.textSecondary)
+        }
+        .padding(.top, 6)
+    }
+
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             ZStack(alignment: .topLeading) {
@@ -684,6 +699,27 @@ struct ResultDetail: View {
     @State private var candidateImage: UIImage?
     @Environment(\.dismiss) private var dismiss
     @State private var shareItem: UIImage?
+    @State private var detailNote = ""
+    @State private var lastConfirmedSampleID: String?
+
+    private func confirmFromDetail() {
+        guard let features = QueryEncoder.lastFeatures else {
+            detailNote = "请先完成一次搜索"
+            return
+        }
+        let cls = features.clsRows.flatMap { $0 }
+        let tiles = features.tileRows.flatMap { $0 }
+        _ = LearningStore.shared.addSample(featureUUID: hit.design.featureUUID, cls: cls, tiles: tiles)
+        lastConfirmedSampleID = LearningStore.shared.lastAddedSampleID
+        detailNote = "已记录学习样本：\(hit.design.code)"
+    }
+
+    private func undoFromDetail() {
+        guard let id = lastConfirmedSampleID else { return }
+        _ = LearningStore.shared.removeSample(sampleID: id)
+        lastConfirmedSampleID = nil
+        detailNote = "已撤回"
+    }
 
     var body: some View {
         NavigationView {
@@ -717,6 +753,34 @@ struct ResultDetail: View {
                         Text(String(format: "%.1f", hit.score * 100))
                             .font(.system(size: 22, weight: .bold))
                             .foregroundColor(UI.orange)
+                    }
+
+                    AppCard {
+                        VStack(spacing: 8) {
+                            Button {
+                                confirmFromDetail()
+                            } label: {
+                                Text("确认是这款")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(UI.orange)
+                                    .foregroundColor(.white)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            if lastConfirmedSampleID != nil {
+                                Button("撤回上次确认") { undoFromDetail() }
+                                    .buttonStyle(.plain)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(UI.orange)
+                            }
+                            if !detailNote.isEmpty {
+                                Text(detailNote)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(UI.textSecondary)
+                            }
+                        }
                     }
 
                     AppCard {
