@@ -331,7 +331,8 @@ struct SearchView: View {
                         .disabled(settings.libraryFilter.isEmpty)
                     }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
-                        ForEach(Array(app.libraries.enumerated()), id: \.offset) { _, item in
+                        ForEach(Array(app.libraries.enumerated()), id: \.offset) { pair in
+                            let item = pair.element
                             let selected = settings.libraryFilter.contains(item.name)
                             Button {
                                 if selected {
@@ -347,7 +348,7 @@ struct SearchView: View {
                                     .background(selected ? UI.orange.opacity(0.14) : UI.cardBackground)
                                     .foregroundColor(selected ? UI.orange : UI.textSecondary)
                                     .clipShape(Capsule())
-                                    .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : UI.hairline, lineWidth: 1))
+                                    .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                         }
