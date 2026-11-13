@@ -331,7 +331,7 @@ struct SearchView: View {
                         .disabled(settings.libraryFilter.isEmpty)
                     }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
-                        ForEach(Array(app.libraries.indices), id: \.self) { index in
+                        ForEach(0..<app.libraries.count, id: \.self) { index in
                             let item = app.libraries[index]
                             let selected = settings.libraryFilter.contains(item.name)
                             Button {
