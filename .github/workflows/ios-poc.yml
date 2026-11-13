@@ -106,7 +106,7 @@ jobs:
           xcodebuild \
             -workspace XiuxunPOC.xcworkspace \
             -scheme XiuxunPOC \
-            -configuration Release \
+            -configuration Release CURRENT_PROJECT_VERSION= \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
