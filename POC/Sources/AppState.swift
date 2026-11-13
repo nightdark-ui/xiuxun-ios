@@ -5,6 +5,11 @@ import Combine
 final class AppState: ObservableObject {
     @Published var galleryCount: Int = 0
     @Published var libraries: [(name: String, count: Int)] = []
+
+    /// 供 SwiftUI ForEach 使用（元组数组不满足 Identifiable）
+    var libraryInfos: [LibraryInfo] {
+        libraries.map { LibraryInfo(id: $0.name, name: $0.name, count: $0.count) }
+    }
     @Published var installing: Bool = false
     @Published var progress: InstallProgress = InstallProgress()
     @Published var message: String = ""
@@ -209,4 +214,11 @@ final class AppState: ObservableObject {
         loadGallery()
         message = "图库已删除"
     }
+}
+
+/// 图库分类（名称 + 款数）
+struct LibraryInfo: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let count: Int
 }
