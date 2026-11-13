@@ -43,7 +43,7 @@ struct ContentView: View {
             .navigationViewStyle(.stack)
             .tabItem { Label("图库", systemImage: "square.grid.2x2") }
             NavigationView {
-                SettingsView()
+                SettingsView(app: app)
             }
             .navigationViewStyle(.stack)
             .tabItem { Label("设置", systemImage: "gearshape") }
