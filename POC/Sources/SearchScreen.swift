@@ -332,25 +332,7 @@ struct SearchView: View {
                     }
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
                         ForEach(Array(app.libraryInfos.enumerated()), id: \.offset) { pair in
-                            let item: LibraryInfo = pair.element
-                            let selected = settings.libraryFilter.contains(item.name)
-                            Button {
-                                if selected {
-                                    settings.libraryFilter.removeAll { $0 == item.name }
-                                } else {
-                                    settings.libraryFilter.append(item.name)
-                                }
-                            } label: {
-                                Text("\(item.name) \(item.count)")
-                                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
-                                    .padding(.horizontal, 8).padding(.vertical, 5)
-                                    .frame(maxWidth: .infinity)
-                                    .background(selected ? UI.orange.opacity(0.14) : UI.cardBackground)
-                                    .foregroundColor(selected ? UI.orange : UI.textSecondary)
-                                    .clipShape(Capsule())
-                                    .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
+                            libraryChip(pair.element)
                         }
                     }
                     Toggle("局部来图优先", isOn: $settings.localFirst)
@@ -359,6 +341,30 @@ struct SearchView: View {
                 .disabled(model.busy)
             }
         }
+    }
+
+
+    /// 单个图库筛选 chip
+    private func libraryChip(_ item: LibraryInfo) -> some View {
+        let selected = settings.libraryFilter.contains(item.name)
+        return Button {
+            if selected {
+                settings.libraryFilter.removeAll { $0 == item.name }
+            } else {
+                settings.libraryFilter.append(item.name)
+            }
+        } label: {
+            Text("\(item.name) \(item.count)")
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .frame(maxWidth: .infinity)
+                .background(selected ? UI.orange.opacity(0.14) : UI.cardBackground)
+                .foregroundColor(selected ? UI.orange : UI.textSecondary)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : Color.black.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy)
     }
 
     private var codeRangeCard: some View {
