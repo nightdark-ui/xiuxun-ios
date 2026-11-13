@@ -1,176 +1,136 @@
 import SwiftUI
 
-/// 性能诊断面板（原探针界面，用于复测线程数、批处理、各后端速度）
+/// 性能诊断（精简版）：只看/改推理线程数。
+/// 其他基准测试已移除，避免误改搜索配置。
 struct ProbeView: View {
     @StateObject private var runner = ProbeRunner()
+    @State private var manualThreads = DeviceInfo.savedBestThreads
+    @State private var currentThreads = DeviceInfo.savedBestThreads
 
     private var isBusy: Bool { runner.phase == .running }
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-    ]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(DeviceInfo.summary)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-
-                if !runner.lastCrashStep.isEmpty && runner.lastCrashStep != "完成" {
-                    Text("上次中断在：\(runner.lastCrashStep)")
-                        .font(.footnote)
-                        .foregroundColor(.orange)
+            VStack(alignment: .leading, spacing: 14) {
+                // 设备信息
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(DeviceInfo.machine)
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("\(DeviceInfo.coreCount) 核 · \(Int(DeviceInfo.memoryGB.rounded())) GB 内存")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
 
-                LazyVGrid(columns: columns, spacing: 8) {
-                    ForEach(ComputeMode.allCases, id: \.self) { mode in
+                // 当前生效线程数
+                HStack {
+                    Text("当前生效线程数")
+                        .font(.system(size: 14))
+                    Spacer()
+                    Text("\(currentThreads)")
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundColor(UI.orange)
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                // 手动指定
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("手动指定线程数")
+                        .font(.system(size: 13, weight: .semibold))
+                    Stepper(value: $manualThreads, in: 1...max(1, DeviceInfo.coreCount)) {
+                        Text("\(manualThreads) 线程")
+                            .font(.system(size: 14, design: .monospaced))
+                    }
+                    .disabled(isBusy)
+
+                    HStack(spacing: 8) {
                         Button {
-                            runner.run(mode: mode)
+                            DeviceInfo.savedBestThreads = manualThreads
+                            currentThreads = manualThreads
                         } label: {
-                            Text(mode.rawValue)
-                                .font(.caption).bold()
+                            Text("保存")
+                                .font(.system(size: 13, weight: .semibold))
                                 .frame(maxWidth: .infinity)
-                                .padding(.vertical, 10)
-                                .background(color(for: mode))
+                                .padding(.vertical, 9)
+                                .background(UI.orange)
                                 .foregroundColor(.white)
-                                .cornerRadius(16)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                         }
+                        .buttonStyle(.plain)
+                        .disabled(isBusy)
+
+                        Button {
+                            manualThreads = DeviceInfo.defaultThreads
+                            DeviceInfo.savedBestThreads = manualThreads
+                            currentThreads = manualThreads
+                        } label: {
+                            Text("恢复默认 \(DeviceInfo.defaultThreads)")
+                                .font(.system(size: 13))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(Color(.secondarySystemBackground))
+                                .foregroundColor(.primary)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
                         .disabled(isBusy)
                     }
                 }
+                .padding(12)
+                .background(Color(.secondarySystemBackground).opacity(0.6))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
+                // 自动标定
                 Button {
                     runner.autotune()
                 } label: {
-                    fullWidthLabel("自动标定线程数（1…\(DeviceInfo.coreCount)）", color: Color(red: 0.35, green: 0.35, blue: 0.55))
+                    HStack(spacing: 6) {
+                        Image(systemName: "speedometer")
+                        Text(isBusy ? "标定中…" : "自动标定线程数（1…\(DeviceInfo.coreCount)）")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(UI.orange.opacity(0.14))
+                    .foregroundColor(UI.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
+                .buttonStyle(.plain)
                 .disabled(isBusy)
 
+                // 标定结果
                 if !runner.autotuneRows.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("线程标定").font(.subheadline).bold()
+                        Text("标定结果（越小越快）")
+                            .font(.system(size: 12, weight: .semibold))
                         ForEach(runner.autotuneRows, id: \.threads) { row in
                             HStack {
-                                Text("\(row.threads) 线程").font(.system(size: 12, design: .monospaced))
+                                Text("\(row.threads) 线程")
+                                    .font(.system(size: 12, design: .monospaced))
                                 Spacer()
                                 Text(String(format: "%.0f ms", row.ms))
-                                    .font(.system(size: 12, design: .monospaced)).bold()
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .bold()
                             }
+                            .foregroundColor(row.threads == currentThreads ? UI.orange : .primary)
                         }
                         if !runner.autotuneBest.isEmpty {
-                            Text(runner.autotuneBest).font(.caption).foregroundColor(.green)
+                            Text(runner.autotuneBest)
+                                .font(.system(size: 11))
+                                .foregroundColor(.green)
                         }
                     }
                     .padding(10)
                     .background(Color(.secondarySystemBackground))
-                    .cornerRadius(10)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
 
-                Button {
-                    runner.batchTest()
-                } label: {
-                    fullWidthLabel("批处理测试（1/4/10/20）", color: Color(red: 0.15, green: 0.45, blue: 0.50))
-                }
-                .disabled(isBusy)
-
-                if !runner.batchRows.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("批处理").font(.subheadline).bold()
-                        ForEach(runner.batchRows, id: \.size) { row in
-                            HStack {
-                                Text("批 \(row.size)").font(.system(size: 12, design: .monospaced))
-                                Spacer()
-                                Text(String(format: "总 %.0f ms", row.ms))
-                                    .font(.system(size: 12, design: .monospaced))
-                                Text(String(format: "每张 %.0f ms", row.perImage))
-                                    .font(.system(size: 12, design: .monospaced)).bold()
-                                    .foregroundColor(.blue)
-                            }
-                        }
-                        if !runner.batchBest.isEmpty {
-                            Text(runner.batchBest).font(.caption).foregroundColor(.green)
-                        }
-                    }
-                    .padding(10)
-                    .background(Color(.secondarySystemBackground))
-                    .cornerRadius(10)
-                }
-
-                Text(runner.phaseText.isEmpty ? runner.phase.rawValue : runner.phaseText)
-                    .font(.footnote)
+                Text("线程数只影响推理速度，不影响搜索结果。更改后下一次搜索生效。")
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
-
-                ForEach(ComputeMode.allCases, id: \.self) { mode in
-                    if let summary = runner.summaries[mode] {
-                        summaryCard(summary)
-                    }
-                }
             }
-            .padding(16)
+            .padding(14)
         }
-    }
-
-    private func fullWidthLabel(_ text: String, color: Color) -> some View {
-        HStack {
-            Spacer()
-            Text(text).font(.footnote).bold()
-            Spacer()
-        }
-        .padding(.vertical, 10)
-        .background(color)
-        .foregroundColor(.white)
-        .cornerRadius(16)
-    }
-
-    private func color(for mode: ComputeMode) -> Color {
-        switch mode {
-        case .cpu1: return Color(red: 0.95, green: 0.40, blue: 0.13)
-        case .cpu4: return Color(red: 0.90, green: 0.55, blue: 0.10)
-        case .cpuAll: return Color(red: 0.85, green: 0.35, blue: 0.20)
-        case .xnnpackAll: return Color(red: 0.20, green: 0.50, blue: 0.75)
-        case .coreML: return Color(red: 0.13, green: 0.55, blue: 0.35)
-        case .coreMLANE: return Color(red: 0.35, green: 0.35, blue: 0.55)
-        }
-    }
-
-    @ViewBuilder
-    private func summaryCard(_ summary: RunSummary) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(summary.mode.rawValue).font(.caption).bold()
-                    .foregroundColor(color(for: summary.mode))
-                Spacer()
-                Text(summary.ok ? "完成" : "失败").font(.caption2).foregroundColor(.secondary)
-            }
-            if summary.ok {
-                HStack(spacing: 6) {
-                    metric("推理", String(format: "%.0f ms", summary.runMs))
-                    metric("建 session", String(format: "%.0f ms", summary.sessionMs))
-                    metric("余弦", String(format: "%.6f", summary.featureCosine))
-                }
-                Text(summary.detail)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
-            } else {
-                Text(summary.note).font(.caption2).foregroundColor(.red)
-            }
-        }
-        .padding(10)
-        .background(Color(.secondarySystemBackground))
-        .cornerRadius(10)
-    }
-
-    private func metric(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 2) {
-            Text(title).font(.caption2).foregroundColor(.secondary)
-            Text(value)
-                .font(.system(size: 11, design: .monospaced)).bold()
-                .minimumScaleFactor(0.5).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color(.tertiarySystemBackground))
-        .cornerRadius(6)
     }
 }
