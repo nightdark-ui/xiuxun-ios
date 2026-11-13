@@ -91,7 +91,7 @@ struct SettingsView: View {
                 BrandHeader()
             }
             Section {
-                Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
+                Toggle("深度复核", isOn: $settings.deepReview)
                 Toggle("自动裁切主体", isOn: $settings.autoCrop)
                 Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
                 VStack(alignment: .leading, spacing: 6) {
