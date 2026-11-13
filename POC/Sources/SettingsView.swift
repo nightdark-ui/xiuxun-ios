@@ -142,7 +142,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("设置")
-        .sheet(isPresented: ) { ProbePanelView() }
+        .sheet(isPresented: $showProbe) { ProbePanelView() }
     }
 }
 
@@ -194,7 +194,7 @@ struct LearningSection: View {
                 message = "选择文件失败：(error.localizedDescription)"
             }
         }
-        .sheet(isPresented: $exporting) {
+        .sheet(isPresented: $showProbe) { ProbePanelView() }
             if let url = exportURL {
                 ShareSheet(items: [url])
             }
