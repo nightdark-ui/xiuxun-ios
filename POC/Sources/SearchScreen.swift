@@ -351,7 +351,7 @@ struct SearchView: View {
             if selected {
                 settings.libraryFilter.removeAll { $0 == item.name }
             } else {
-                settings.libraryFilter.append(item.name)
+                settings.libraryFilter.insert(item.name)
             }
         } label: {
             Text("\(item.name) \(item.count)")
