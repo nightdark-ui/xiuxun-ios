@@ -203,8 +203,9 @@ struct SearchView: View {
             set: { if !$0 { cropImage = nil } }
         )) {
             if let image = cropImage {
-                CropScreen(image: image) { picked in
-                    if let package = app.package { model.run(image: picked, package: package) }
+                CropScreen(image: image) { picked, cropped in
+                    pendingImage = picked
+                    pendingCropped = cropped
                     cropImage = nil
                 }
             }
@@ -257,7 +258,7 @@ struct SearchView: View {
         AppCard {
             CardHeader(title: "客户来图")
             DashedBox {
-                if let thumb = model.queryThumb {
+                if let thumb = pendingImage ?? model.queryThumb {
                     Image(uiImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
@@ -301,6 +302,29 @@ struct SearchView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { if !model.busy { showPicker = true } }
+
+            if let pending = pendingImage {
+                Button {
+                    guard let package = app.package else { return }
+                    // 整图 → 自动裁切开；框选 → 关闭（用户已经框好了）
+                    settings.autoCrop = !pendingCropped
+                    model.run(image: pending, package: package)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(model.busy ? "搜索中…" : "开始搜图")
+                            .font(.system(size: 15, weight: .bold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(UI.orange)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.busy)
+            }
         }
     }
 
@@ -497,6 +521,8 @@ struct SearchView: View {
     }
 
     @State private var manualCode = ""
+    @State private var pendingImage: UIImage?
+    @State private var pendingCropped = false
     @State private var pendingDesign: DesignRef?
 
     /// 结果里没有正确款时，手动输入款号确认

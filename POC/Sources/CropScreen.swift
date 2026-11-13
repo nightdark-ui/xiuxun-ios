@@ -1,114 +1,200 @@
 import SwiftUI
 
-/// 框选搜索：拖动/缩放一个矩形，只搜框内区域。
+/// 框选搜索：四角可缩放 + 内部可拖动，只搜框内区域。
 struct CropScreen: View {
     let image: UIImage
-    let onConfirm: (UIImage) -> Void
+    /// didCrop == false 表示用户没有动过框（用整图）
+    let onConfirm: (UIImage, Bool) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    /// 归一化坐标（0…1）
-    @State private var rect = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
-    @State private var dragStart: CGRect?
+    @State private var rect = CGRect(x: 0.08, y: 0.08, width: 0.84, height: 0.84)
+    @State private var startRect: CGRect = .zero
+    @State private var touched = false
+
+    private var didCrop: Bool {
+        touched && (rect.width < 0.97 || rect.height < 0.97 || rect.minX > 0.015 || rect.minY > 0.015)
+    }
 
     var body: some View {
-        NavigationView {
-            GeometryReader { geo in
-                let fitted = fittedFrame(image: image, in: geo.size)
-                ZStack {
-                    Color.black
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: geo.size.width, height: geo.size.height)
+        GeometryReader { geo in
+            let fitted = fittedFrame(image: image, in: geo.size)
+            let box = CGRect(
+                x: fitted.minX + rect.minX * fitted.width,
+                y: fitted.minY + rect.minY * fitted.height,
+                width: rect.width * fitted.width,
+                height: rect.height * fitted.height
+            )
 
-                    // 框选区域
-                    let box = CGRect(
-                        x: fitted.minX + rect.minX * fitted.width,
-                        y: fitted.minY + rect.minY * fitted.height,
-                        width: rect.width * fitted.width,
-                        height: rect.height * fitted.height
-                    )
+            ZStack {
+                Color.black.ignoresSafeArea()
 
-                    Rectangle()
-                        .fill(Color.black.opacity(0.45))
-                        .mask(
-                            ZStack {
-                                Rectangle().fill(Color.white)
-                                Rectangle()
-                                    .frame(width: box.width, height: box.height)
-                                    .position(x: box.midX, y: box.midY)
-                                    .blendMode(.destinationOut)
-                            }
-                            .compositingGroup()
-                        )
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: geo.size.width, height: geo.size.height)
 
-                    Rectangle()
-                        .stroke(Color.orange, lineWidth: 2)
-                        .frame(width: box.width, height: box.height)
-                        .position(x: box.midX, y: box.midY)
-
-                    // 右下角缩放柄
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 26, height: 26)
-                        .position(x: box.maxX, y: box.maxY)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    let start = dragStart ?? rect
-                                    if dragStart == nil { dragStart = start }
-                                    var next = start
-                                    next.size.width = clamp(start.width + value.translation.width / fitted.width, 0.05, 1 - start.minX)
-                                    next.size.height = clamp(start.height + value.translation.height / fitted.height, 0.05, 1 - start.minY)
-                                    rect = next
-                                }
-                                .onEnded { _ in dragStart = nil }
-                        )
-
-                    // 内部拖动（整体移动）
-                    Rectangle()
-                        .fill(Color.white.opacity(0.001))
-                        .frame(width: box.width, height: box.height)
-                        .position(x: box.midX, y: box.midY)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    let start = dragStart ?? rect
-                                    if dragStart == nil { dragStart = start }
-                                    var next = start
-                                    next.origin.x = clamp(start.minX + value.translation.width / fitted.width, 0, 1 - start.width)
-                                    next.origin.y = clamp(start.minY + value.translation.height / fitted.height, 0, 1 - start.height)
-                                    rect = next
-                                }
-                                .onEnded { _ in dragStart = nil }
-                        )
-                }
-            }
-            .ignoresSafeArea()
-            .navigationTitle("拖动框选要搜的区域")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("取消") { dismiss() }
-                }
-                ToolbarItemGroup(placement: .bottomBar) {
-                    Button("整图搜索") {
-                        onConfirm(image)
-                        dismiss()
-                    }
-                    Spacer()
-                    Button {
-                        if let cropped = crop(image: image, rect: rect) {
-                            onConfirm(cropped)
+                // 框外遮罩
+                Rectangle()
+                    .fill(Color.black.opacity(0.5))
+                    .mask(
+                        ZStack {
+                            Rectangle().fill(Color.white)
+                            Rectangle()
+                                .frame(width: box.width, height: box.height)
+                                .position(x: box.midX, y: box.midY)
+                                .blendMode(.destinationOut)
                         }
-                        dismiss()
-                    } label: {
-                        Text("搜框内").bold()
+                        .compositingGroup()
+                    )
+                    .allowsHitTesting(false)
+
+                // 框线
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.white.opacity(0.95), lineWidth: 1.5)
+                    .frame(width: box.width, height: box.height)
+                    .position(x: box.midX, y: box.midY)
+                    .allowsHitTesting(false)
+
+                // 内部拖动
+                Rectangle()
+                    .fill(Color.white.opacity(0.001))
+                    .frame(width: max(0, box.width - 48), height: max(0, box.height - 48))
+                    .position(x: box.midX, y: box.midY)
+                    .gesture(moveGesture(fitted: fitted))
+
+                // 四角手柄
+                cornerHandle(at: CGPoint(x: box.minX, y: box.minY), fitted: fitted, corner: .topLeft)
+                cornerHandle(at: CGPoint(x: box.maxX, y: box.minY), fitted: fitted, corner: .topRight)
+                cornerHandle(at: CGPoint(x: box.minX, y: box.maxY), fitted: fitted, corner: .bottomLeft)
+                cornerHandle(at: CGPoint(x: box.maxX, y: box.maxY), fitted: fitted, corner: .bottomRight)
+
+                // 顶部提示
+                VStack {
+                    Text("拖动四角缩放，拖动框内移动")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.85))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Color.black.opacity(0.45))
+                        .clipShape(Capsule())
+                        .padding(.top, 8)
+                    Spacer()
+                }
+
+                // 底部操作栏
+                VStack {
+                    Spacer()
+                    HStack(spacing: 10) {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("取消")
+                                .font(.system(size: 15, weight: .medium))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(Color.white.opacity(0.14))
+                                .foregroundColor(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            onConfirm(image, false)
+                            dismiss()
+                        } label: {
+                            Text("整图搜索")
+                                .font(.system(size: 15, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(Color.white)
+                                .foregroundColor(.black)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            if let cropped = crop(image: image, rect: rect) {
+                                onConfirm(cropped, true)
+                            }
+                            dismiss()
+                        } label: {
+                            Text("搜框内")
+                                .font(.system(size: 15, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(Color(red: 0.95, green: 0.40, blue: 0.13))
+                                .foregroundColor(.white)
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 26)
                 }
             }
         }
+        .ignoresSafeArea()
     }
+
+    // MARK: - 手势
+
+    private enum Corner { case topLeft, topRight, bottomLeft, bottomRight }
+
+    private func cornerHandle(at point: CGPoint, fitted: CGRect, corner: Corner) -> some View {
+        Circle()
+            .fill(Color.white)
+            .overlay(Circle().stroke(Color(red: 0.95, green: 0.40, blue: 0.13), lineWidth: 3))
+            .frame(width: 30, height: 30)
+            .position(point)
+            .gesture(resizeGesture(fitted: fitted, corner: corner))
+    }
+
+    private func resizeGesture(fitted: CGRect, corner: Corner) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if !touched { startRect = rect; touched = true }
+                let dx = value.translation.width / fitted.width
+                let dy = value.translation.height / fitted.height
+                var next = startRect
+                switch corner {
+                case .topLeft:
+                    let newX = clamp(startRect.minX + dx, 0, startRect.maxX - 0.08)
+                    let newY = clamp(startRect.minY + dy, 0, startRect.maxY - 0.08)
+                    next = CGRect(x: newX, y: newY,
+                                  width: startRect.maxX - newX, height: startRect.maxY - newY)
+                case .topRight:
+                    let newMaxX = clamp(startRect.maxX + dx, startRect.minX + 0.08, 1)
+                    let newY = clamp(startRect.minY + dy, 0, startRect.maxY - 0.08)
+                    next = CGRect(x: startRect.minX, y: newY,
+                                  width: newMaxX - startRect.minX, height: startRect.maxY - newY)
+                case .bottomLeft:
+                    let newX = clamp(startRect.minX + dx, 0, startRect.maxX - 0.08)
+                    let newMaxY = clamp(startRect.maxY + dy, startRect.minY + 0.08, 1)
+                    next = CGRect(x: newX, y: startRect.minY,
+                                  width: startRect.maxX - newX, height: newMaxY - startRect.minY)
+                case .bottomRight:
+                    let newMaxX = clamp(startRect.maxX + dx, startRect.minX + 0.08, 1)
+                    let newMaxY = clamp(startRect.maxY + dy, startRect.minY + 0.08, 1)
+                    next = CGRect(x: startRect.minX, y: startRect.minY,
+                                  width: newMaxX - startRect.minX, height: newMaxY - startRect.minY)
+                }
+                rect = next
+            }
+    }
+
+    private func moveGesture(fitted: CGRect) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                if !touched { startRect = rect; touched = true }
+                var next = startRect
+                next.origin.x = clamp(startRect.minX + value.translation.width / fitted.width,
+                                      0, 1 - startRect.width)
+                next.origin.y = clamp(startRect.minY + value.translation.height / fitted.height,
+                                      0, 1 - startRect.height)
+                rect = next
+            }
+    }
+
+    // MARK: - 工具
 
     private func clamp(_ value: CGFloat, _ low: CGFloat, _ high: CGFloat) -> CGFloat {
         min(max(value, low), max(low, high))

@@ -67,7 +67,7 @@ final class AppSettings: ObservableObject {
         options.mirrorEnabled = mirrorEnabled
         options.fastMode = false   // 已移除快速模式：只转 4 角度会影响精度
         options.deepReview = deepReview
-        options.resultCount = resultCount
+        options.resultCount = deepReview ? max(100, resultCount) : resultCount
         options.baseInputSize = 336
         options.selectedLibraries = libraryFilter
         options.diagnosticCode = diagnosticCode
@@ -123,7 +123,6 @@ struct SettingsView: View {
             }
 
             Section {
-                Stepper("结果数量：\(settings.resultCount)", value: $settings.resultCount, in: 10...60, step: 10)
             } header: {
                 Text("结果")
             }
