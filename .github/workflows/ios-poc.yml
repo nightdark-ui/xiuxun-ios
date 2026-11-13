@@ -57,7 +57,11 @@ jobs:
 
       - name: Fetch base model
         run: |
-          curl -fL --retry 3 -o POC/Resources/dinov2-base-fp16.onnx https://github.com/nightdark-ui/xiuxun-ios/releases/download/models-v1/dinov2-base-fp16.onnx
+          curl -fL --retry 3 \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/octet-stream" \
+            -o POC/Resources/dinov2-base-fp16.onnx \
+            https://api.github.com/repos/nightdark-ui/xiuxun-ios/releases/assets/$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/nightdark-ui/xiuxun-ios/releases/tags/models-v1 | python3 -c "import sys,json;print([a['id'] for a in json.load(sys.stdin)['assets'] if a['name']=='dinov2-base-fp16.onnx'][0])")
           ls -lh POC/Resources/dinov2-base-fp16.onnx
 
       - name: Fetch OpenCV framework
