@@ -82,93 +82,89 @@ final class AppSettings: ObservableObject {
 }
 
 struct SettingsView: View {
+    @ObservedObject var app: AppState
     @ObservedObject private var settings = AppSettings.shared
     @State private var showProbe = false
 
     var body: some View {
-        Form {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
                 BrandHeader()
-            }
-            Section {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("识别严格度").font(.system(size: 14))
-                    Segmented(
-                        options: ["精准", "均衡", "宽松"],
-                        selected: Binding(
-                            get: { settings.strictness },
-                            set: { settings.strictness = $0 }
-                        )
-                    )
+
+                group("搜索") {
+                    Toggle("base 输入 336（PC 原口径）", isOn: $settings.base336)
+                        .font(.system(size: 15))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
                 }
-            } header: {
-                Text("搜索")
-            } footer: {
-                Text("深度复核：候选 120、base 336，单次约 25–30 秒；普通搜索约 13–15 秒。")
-                    .font(.caption2)
-            }
 
-            Section {
-                Toggle("base 用 336（PC 原口径）", isOn: $settings.base336)
-            } header: {
-                Text("相似度")
-            } footer: {
-                Text("224 快但 Top5 顺序与 PC 有差异；336 更接近 PC，每次多 2–3 秒。")
-                    .font(.caption2)
-            }
-
-            Section {
-            } header: {
-                Text("结果")
-            }
-
-            DiagnoseSection()
-            GalleryLocationSection()
-            LearningSection()
-
-            Section {
-                Button {
-                    showProbe = true
-                } label: {
-                    HStack {
-                        Text("性能诊断")
-                        Spacer()
-                        Text("线程数 \(DeviceInfo.savedBestThreads)")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
+                group("图库") {
+                    row("当前图库", value: app.hasGallery ? "已载入 \(app.galleryCount) 条" : "未导入")
+                    Divider().padding(.leading, 14)
+                    NavigationLink { GalleryBrowser(app: app) } label: {
+                        row("浏览图库")
                     }
+                    .buttonStyle(.plain)
+                    Divider().padding(.leading, 14)
+                    Button { app.verifyGallery() } label: {
+                        row(app.verifying ? "校验中…" : "校验图库")
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(app.verifying)
                 }
-            } header: {
-                Text("诊断")
-            } footer: {
-                Text("查看/修改推理线程数。线程数只影响速度，不影响搜索结果。")
-                    .font(.caption2)
-            }
 
-            Section {
-                Text(DeviceInfo.summary).font(.caption2)
-                Text("线程信息与图库容量")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            } header: {
-                Text("设备")
-            }
-            Section {
-                HStack {
-                    Text("版本")
-                    Spacer()
-                    Text("\(AppInfo.version) · 构建 \(AppInfo.build)")
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
+                group("参考学习") { LearningSection() }
+
+                group("诊断") {
+                    Button { showProbe = true } label: {
+                        row("性能诊断", value: "线程数 \(DeviceInfo.savedBestThreads)")
+                    }
+                    .buttonStyle(.plain)
                 }
-            }
 
+                group("关于") {
+                    row("版本", value: "\(AppInfo.version) · 构建 \(AppInfo.build)")
+                    Divider().padding(.leading, 14)
+                    row("设备", value: "\(DeviceInfo.machine) · \(DeviceInfo.coreCount) 核")
+                }
+
+                GalleryLocationSection()
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 30)
         }
+        .background(UI.pageBackground.ignoresSafeArea())
         .navigationTitle("设置")
+        .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showProbe) { ProbePanelView() }
+    }
+
+    private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(UI.textSecondary)
+                .padding(.leading, 4)
+            VStack(spacing: 0) { content() }
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+
+    private func row(_ title: String, value: String? = nil) -> some View {
+        HStack {
+            Text(title).font(.system(size: 15)).foregroundColor(UI.textPrimary)
+            Spacer()
+            if let value {
+                Text(value).font(.system(size: 13)).foregroundColor(UI.textSecondary)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(UI.textSecondary.opacity(0.55))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .contentShape(Rectangle())
     }
 }
 
