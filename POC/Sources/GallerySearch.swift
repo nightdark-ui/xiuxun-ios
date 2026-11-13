@@ -219,17 +219,65 @@ final class GallerySearch {
             note += note.isEmpty ? line : "；" + line
         }
 
-        if let top = ranked.first {
-            let topDesign = package.designs[top.index]
-            let topScore = Self.combined(top.cls, top.tile)
-            let secondScore = ranked.count > 1 ? Self.combined(ranked[1].cls, ranked[1].tile) : 0
-            let slCount = ranked.prefix(10).filter {
-                package.designs[$0.index].library.contains("SL")
-            }.count
-            if topDesign.library.contains("SL"), topScore >= 0.85,
-               topScore - secondScore >= 0.02, slCount >= 3 {
-                ranked = ranked.filter { package.designs[$0.index].library.contains("SL") }
-                note = "已启用 SL 系列门控"
+        // PC 式 SL 底布系列门控：先认底布（两位系列），再在系列内找绣花；不自信则回退全库
+        let slEnabled = options.selectedLibraries.isEmpty
+            || options.selectedLibraries.contains { $0.contains("SL") }
+        if slEnabled, !query.clsRows.isEmpty {
+            let slItems = ranked.filter { package.designs[$0.index].library.contains("SL") }
+            if slItems.count >= 3 {
+                var sums: [String: [Float]] = [:]
+                var counts: [String: Int] = [:]
+                package.withRecallPointer { base, _ in
+                    for item in slItems {
+                        let key = Self.slSeriesKey(package.designs[item.index].code)
+                        if key.isEmpty { continue }
+                        let record = base.advanced(by: item.index * GalleryPackage.recallFloats)
+                        var mean = [Float](repeating: 0, count: GalleryPackage.dim)
+                        for row in 0..<GalleryPackage.clsRows {
+                            let ptr = record.advanced(by: row * GalleryPackage.dim)
+                            for d in 0..<GalleryPackage.dim { mean[d] += ptr[d] }
+                        }
+                        for d in 0..<GalleryPackage.dim { mean[d] /= Float(GalleryPackage.clsRows) }
+                        if sums[key] != nil {
+                            for d in 0..<GalleryPackage.dim { sums[key]![d] += mean[d] }
+                        } else {
+                            sums[key] = mean
+                        }
+                        counts[key, default: 0] += 1
+                    }
+                }
+                if sums.count >= 2 {
+                    var scored: [(key: String, score: Double)] = []
+                    for (key, total) in sums {
+                        let divisor = Float(counts[key] ?? 1)
+                        var proto = total.map { $0 / divisor }
+                        var norm = 0.0
+                        for value in proto { norm += Double(value * value) }
+                        norm = norm.squareRoot()
+                        if norm > 1e-9 { proto = proto.map { $0 / Float(norm) } }
+                        var best = 0.0
+                        for row in query.clsRows {
+                            var dot = 0.0
+                            for d in 0..<GalleryPackage.dim { dot += Double(row[d]) * Double(proto[d]) }
+                            if dot > best { best = dot }
+                        }
+                        scored.append((key, best))
+                    }
+                    scored.sort { $0.score > $1.score }
+                    let top = scored[0]
+                    let gap = top.score - scored[1].score
+                    if top.score >= 0.85, gap >= 0.02 {
+                        let before = ranked.count
+                        ranked = ranked.filter { item in
+                            let design = package.designs[item.index]
+                            if !design.library.contains("SL") { return true }
+                            return Self.slSeriesKey(design.code) == top.key
+                        }
+                        note = "SL 底布 \(top.key) \(String(format: "%.3f", top.score)) 差\(String(format: "%.3f", gap))：\(before)→\(ranked.count)"
+                    } else {
+                        note = "SL 底布不确定 \(String(format: "%.3f", top.score)) 差\(String(format: "%.3f", gap))，回退全库"
+                    }
+                }
             }
         }
         timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
@@ -579,5 +627,14 @@ final class GallerySearch {
             output.append(hit)
         }
         return output
+    }
+
+    /// SL 底布系列键：取编号前两位，如 SL30xxx -> "SL30"
+    static func slSeriesKey(_ code: String) -> String {
+        let upper = code.uppercased()
+        guard upper.hasPrefix("SL") else { return "" }
+        let digits = upper.dropFirst(2).prefix(2)
+        guard digits.count == 2, digits.allSatisfy({ $0.isNumber }) else { return "" }
+        return "SL" + digits
     }
 }
