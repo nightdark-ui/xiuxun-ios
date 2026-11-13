@@ -3,6 +3,7 @@ import SwiftUI
 /// 启动品牌页（对齐安卓版：「AI小助手 / 作者：Night / 正在打开库存…」）
 struct SplashView: View {
     @State private var fadeIn = false
+    @State private var progress: CGFloat = 0.04
 
     var body: some View {
         ZStack {
@@ -29,16 +30,22 @@ struct SplashView: View {
                     .foregroundColor(UI.textSecondary)
                     .padding(.top, 6)
 
-                Rectangle()
-                    .fill(UI.orange.opacity(0.18))
-                    .frame(width: 120, height: 1)
-                    .padding(.top, 4)
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(UI.orange.opacity(0.16))
+                        .frame(width: 140, height: 3)
+                    Capsule()
+                        .fill(UI.orange)
+                        .frame(width: 140 * progress, height: 3)
+                }
+                .padding(.top, 10)
             }
             .opacity(fadeIn ? 1 : 0)
             .scaleEffect(fadeIn ? 1 : 0.96)
         }
         .onAppear {
             withAnimation(.easeOut(duration: 0.35)) { fadeIn = true }
+            withAnimation(.easeInOut(duration: 1.25)) { progress = 0.98 }
         }
     }
 }

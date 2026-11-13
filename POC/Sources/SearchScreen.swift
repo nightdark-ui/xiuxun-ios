@@ -298,6 +298,8 @@ struct SearchView: View {
                 .disabled(model.busy)
                 .padding(.horizontal, 10)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { if !model.busy { showPicker = true } }
         }
     }
 
@@ -313,17 +315,48 @@ struct SearchView: View {
                 ))
                 .frame(width: 150)
             }
-            Button { showScope = true } label: {
-                HStack {
-                    Text("按图库筛选").font(.system(size: 13)).foregroundColor(UI.textPrimary)
-                    Spacer()
-                    Text(settings.libraryFilter.isEmpty ? "全部" : "\(settings.libraryFilter.count) 个")
-                        .font(.system(size: 12)).foregroundColor(UI.orange)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11)).foregroundColor(UI.textSecondary)
+            if !app.libraries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("按图库筛选").font(.system(size: 13)).foregroundColor(UI.textPrimary)
+                        Spacer()
+                        Button {
+                            settings.libraryFilter = []
+                        } label: {
+                            Text(settings.libraryFilter.isEmpty ? "全部" : "清空")
+                                .font(.system(size: 12))
+                                .foregroundColor(UI.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(settings.libraryFilter.isEmpty)
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 6)], spacing: 6) {
+                        ForEach(app.libraries, id: \.name) { item in
+                            let selected = settings.libraryFilter.contains(item.name)
+                            Button {
+                                if selected {
+                                    settings.libraryFilter.removeAll { $0 == item.name }
+                                } else {
+                                    settings.libraryFilter.append(item.name)
+                                }
+                            } label: {
+                                Text("\(item.name) \(item.count)")
+                                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                                    .padding(.horizontal, 8).padding(.vertical, 5)
+                                    .frame(maxWidth: .infinity)
+                                    .background(selected ? UI.orange.opacity(0.14) : UI.cardBackground)
+                                    .foregroundColor(selected ? UI.orange : UI.textSecondary)
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().stroke(selected ? UI.orange.opacity(0.5) : UI.hairline, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    Toggle("局部来图优先", isOn: $settings.localFirst)
+                        .font(.system(size: 13))
                 }
+                .disabled(model.busy)
             }
-            .disabled(model.busy)
         }
     }
 
