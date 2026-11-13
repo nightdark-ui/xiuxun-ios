@@ -215,10 +215,21 @@ struct SearchView: View {
                 codeRangeCard
                 if model.busy { progressCard }
                 if !model.errorText.isEmpty { errorCard }
-                if let timings = model.timings { resultHeader(timings) }
                 if !model.hits.isEmpty { manualCard }
-                resultGrid
-                if !model.hits.isEmpty { deepReviewAgain }
+                if let timings = model.timings {
+                    LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
+                        Section {
+                            resultGrid
+                            if !model.hits.isEmpty { deepReviewAgain }
+                        } header: {
+                            resultHeader(timings)
+                                .padding(.vertical, 6)
+                                .background(UI.pageBackground)
+                        }
+                    }
+                } else {
+                    resultGrid
+                }
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
@@ -653,18 +664,39 @@ struct SearchView: View {
                     .font(.system(size: 13, weight: .semibold))
             }
             if let pending = pendingDesign {
-                HStack(spacing: 10) {
-                    CachedThumb(url: app.package?.thumbURL(for: pending), height: 72)
-                        .frame(width: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(pending.code).font(.system(size: 14, weight: .semibold))
-                        Button("确认是这款") { confirmPending() }
-                            .buttonStyle(.plain)
-                            .foregroundColor(UI.orange)
-                            .font(.system(size: 12, weight: .semibold))
+                VStack(alignment: .leading, spacing: 8) {
+                    CachedThumb(url: app.package?.imageURL(for: pending), height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(pending.code).font(.system(size: 20, weight: .bold))
+                            Text(pending.library).font(.system(size: 12)).foregroundColor(UI.textSecondary)
+                        }
+                        Spacer()
+                        Button {
+                            pendingDesign = nil
+                            manualCode = ""
+                            model.note = ""
+                        } label: {
+                            Text("清空")
+                                .font(.system(size: 12))
+                                .padding(.horizontal, 12).padding(.vertical, 6)
+                                .background(Color.black.opacity(0.05))
+                                .foregroundColor(UI.textSecondary)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    Spacer()
+                    Button { confirmPending() } label: {
+                        Text("确认是这款")
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(UI.orange)
+                            .foregroundColor(.white)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             if lastConfirmedSampleID != nil {
