@@ -67,7 +67,7 @@ final class AppSettings: ObservableObject {
         options.mirrorEnabled = mirrorEnabled
         options.fastMode = false   // 已移除快速模式：只转 4 角度会影响精度
         options.deepReview = deepReview
-        options.resultCount = deepReview ? max(100, resultCount) : resultCount
+        options.resultCount = deepReview ? 100 : 60
         options.baseInputSize = 336
         options.selectedLibraries = libraryFilter
         options.diagnosticCode = diagnosticCode

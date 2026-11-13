@@ -373,15 +373,6 @@ struct SearchView: View {
     private var scopeCard: some View {
         AppCard {
             CardHeader(title: "搜索范围", trailing: settings.libraryFilter.isEmpty ? "全部图库" : "已选 \(settings.libraryFilter.count) 个库")
-            HStack {
-                Text("结果数量").font(.system(size: 13)).foregroundColor(UI.textPrimary)
-                Spacer()
-                Segmented(options: resultOptions, selected: Binding(
-                    get: { resultIndex },
-                    set: { settings.resultCount = Int(resultOptions[$0]) ?? 30 }
-                ))
-                .frame(width: 150)
-            }
             if !app.libraries.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
