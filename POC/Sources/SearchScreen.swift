@@ -39,6 +39,7 @@ struct ImagePicker: UIViewControllerRepresentable {
 final class SearchModel: ObservableObject {
     @Published var busy = false
     @Published var progressText = ""
+    @Published var progressValue: Double = 0
     @Published var hits: [SearchHit] = []
     @Published var timings: SearchTimings?
     @Published var note = ""
@@ -141,6 +142,13 @@ final class SearchModel: ObservableObject {
 
     private func update(_ text: String) {
         DispatchQueue.main.async { self.progressText = text }
+        let stages: [(String, Double)] = [
+            ("准备", 0.05), ("预处理", 0.10), ("编码", 0.15), ("特征", 0.45),
+            ("召回", 0.60), ("局部", 0.72), ("精排", 0.82), ("比对", 0.90), ("整理", 0.97),
+        ]
+        var value = progressValue
+        for (key, v) in stages where text.contains(key) { value = max(value, v) }
+        progressValue = min(0.99, value)
     }
 
     private func getEncoder() throws -> QueryEncoder {
@@ -174,6 +182,7 @@ struct SearchView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(spacing: 12) {
                 BrandHeader()
@@ -190,6 +199,7 @@ struct SearchView: View {
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
+            .id("resultsTop")
         }
         .background(UI.pageBackground.ignoresSafeArea())
         .overlay(Group { if model.busy { searchOverlay } })
@@ -223,7 +233,14 @@ struct SearchView: View {
             set: { if !$0 { detail = nil } }
         )) {
             if let hit = detail {
-                ResultDetail(hit: hit, package: app.package, queryImage: model.queryThumb)
+                ResultDetail(hit: hit, package: app.package, queryImage: model.queryThumb, rank: detailRank)
+            }
+        }
+        }
+        .onChange(of: model.hits.count) { count in
+            guard count > 0, !model.busy else { return }
+            withAnimation(.easeInOut(duration: 0.35)) {
+                proxy.scrollTo("resultsTop", anchor: .top)
             }
         }
     }
@@ -237,15 +254,16 @@ struct SearchView: View {
             Color.black.opacity(0.28).ignoresSafeArea()
 
             VStack(spacing: 14) {
-                ProgressView()
-                    .scaleEffect(1.3)
+                ProgressView(value: model.progressValue)
+                    .progressViewStyle(.linear)
                     .tint(UI.orange)
+                    .frame(width: 200)
 
                 Text(model.progressText.isEmpty ? "正在搜索…" : model.progressText)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(UI.textPrimary)
 
-                Text("正在比对花型，请稍候")
+                Text("\(Int(model.progressValue * 100))% · 正在比对花型")
                     .font(.system(size: 11))
                     .foregroundColor(UI.textSecondary)
 
@@ -493,7 +511,28 @@ struct SearchView: View {
     }
 
     private func resultHeader(_ timings: SearchTimings) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            if let query = model.queryThumb {
+                HStack(spacing: 10) {
+                    Image(uiImage: query)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 54, height: 54)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("客户来图")
+                            .font(.system(size: 11))
+                            .foregroundColor(UI.textSecondary)
+                        Text("对照下面的第 1 名查看")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(UI.textPrimary)
+                    }
+                    Spacer()
+                }
+                .padding(8)
+                .background(UI.orange.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
             HStack {
                 Text("找到 \(model.hits.count) 个结果")
                     .font(.system(size: 13, weight: .semibold))
@@ -534,7 +573,7 @@ struct SearchView: View {
         } else {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(Array(model.hits.enumerated()), id: \.offset) { index, hit in
-                    Button { detail = hit } label: {
+                    Button { detail = hit; detailRank = index + 1 } label: {
                         resultCell(hit: hit, rank: index + 1)
                     }
                     .buttonStyle(.plain)
@@ -572,6 +611,7 @@ struct SearchView: View {
 
     @State private var manualCode = ""
     @State private var pendingImage: UIImage?
+    @State private var detailRank = 0
     @State private var pendingCropped = false
     @State private var pendingDesign: DesignRef?
 
@@ -772,6 +812,7 @@ struct ResultDetail: View {
     let hit: SearchHit
     let package: GalleryPackage?
     let queryImage: UIImage?
+    var rank: Int = 0
     @State private var candidateImage: UIImage?
     @Environment(\.dismiss) private var dismiss
     @State private var shareItem: UIImage?
@@ -833,6 +874,7 @@ struct ResultDetail: View {
 
                     AppCard {
                         VStack(spacing: 8) {
+                            if rank == 0 || rank > 10 {
                             Button {
                                 confirmFromDetail()
                             } label: {
@@ -856,6 +898,7 @@ struct ResultDetail: View {
                                     .font(.system(size: 11))
                                     .foregroundColor(UI.textSecondary)
                             }
+                            }
                         }
                     }
 
@@ -872,6 +915,7 @@ struct ResultDetail: View {
                     )
 
                     HStack(spacing: 10) {
+                        Spacer(minLength: 0)
                         PrimaryButton(title: "分享 / 保存") { loadImage() }
                         Button {
                             loadImage()
