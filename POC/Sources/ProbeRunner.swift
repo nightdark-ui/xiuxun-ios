@@ -69,7 +69,7 @@ enum DeviceInfo {
     }
 
     /// 未标定时的保守默认：4 线程（实测 6 核机器上最优）
-    static var defaultThreads: Int { max(2, min(8, coreCount)) }
+    static var defaultThreads: Int { max(2, coreCount) }
 
     static var summary: String {
         String(

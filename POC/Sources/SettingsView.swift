@@ -63,7 +63,7 @@ final class AppSettings: ObservableObject {
 
     func makeOptions() -> SearchOptions {
         var options = SearchOptions()
-        options.rotationEnabled = rotationEnabled
+        options.rotationEnabled = true
         options.mirrorEnabled = mirrorEnabled
         options.fastMode = false   // 已移除快速模式：只转 4 角度会影响精度
         options.deepReview = deepReview
@@ -91,9 +91,6 @@ struct SettingsView: View {
                 BrandHeader()
             }
             Section {
-                Toggle("深度复核", isOn: $settings.deepReview)
-                Toggle("自动裁切主体", isOn: $settings.autoCrop)
-                Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("识别严格度").font(.system(size: 14))
                     Segmented(
