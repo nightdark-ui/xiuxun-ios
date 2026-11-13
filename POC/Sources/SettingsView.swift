@@ -98,24 +98,25 @@ struct SettingsView: View {
                         .padding(.vertical, 10)
                 }
 
-                group("图库") {
-                    row("当前图库", value: app.hasGallery ? "已载入 \(app.galleryCount) 条" : "未导入")
-                    Divider().padding(.leading, 14)
-                    NavigationLink { GalleryBrowser(app: app) } label: {
-                        row("浏览图库")
-                    }
-                    .buttonStyle(.plain)
-                    Divider().padding(.leading, 14)
-                    Button { app.verifyGallery() } label: {
-                        row(app.verifying ? "校验中…" : "校验图库")
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(app.verifying)
-                }
-
                 group("参考学习") { LearningSection() }
 
                 group("诊断") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("诊断款号").font(.system(size: 15)).foregroundColor(UI.textPrimary)
+                        TextField("如 10464（留空关闭）", text: $settings.diagnosticCode)
+                            .font(.system(size: 14))
+                            .textFieldStyle(.plain)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.characters)
+                        Text("填入后，搜索结果下方会显示该款的召回与最终排名")
+                            .font(.system(size: 11))
+                            .foregroundColor(UI.textSecondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+
+                    Divider().padding(.leading, 14)
+
                     Button { showProbe = true } label: {
                         row("性能诊断", value: "线程数 \(DeviceInfo.savedBestThreads)")
                     }
@@ -171,55 +172,57 @@ struct SettingsView: View {
 
 /// 学习包：导入 / 导出 / 统计
 struct LearningSection: View {
-    @State private var importing = false
-    @State private var exporting = false
     @State private var message = ""
-    @State private var exportURL: URL?
 
     var body: some View {
-        Section {
+        VStack(spacing: 0) {
             HStack {
-                Text("学习样本")
+                Text("学习样本").font(.system(size: 15)).foregroundColor(UI.textPrimary)
                 Spacer()
                 Text("\(LearningStore.shared.totalSamples) 个 / \(LearningStore.shared.uuidCount) 款")
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundColor(UI.textSecondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 14)
+
+            Divider().padding(.leading, 14)
+
+            Button {
+                doExport()
+            } label: {
+                HStack {
+                    Text("导出学习包").font(.system(size: 15)).foregroundColor(UI.textPrimary)
+                    Spacer()
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 14))
+                        .foregroundColor(UI.textSecondary.opacity(0.7))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 14)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(LearningStore.shared.totalSamples == 0)
+
+            if !message.isEmpty {
+                Divider().padding(.leading, 14)
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundColor(UI.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
             }
 
-            Button("导出学习包") { doExport() }
-                .disabled(LearningStore.shared.totalSamples == 0)
-            if !message.isEmpty {
-                Text(message).font(.caption).foregroundColor(.secondary)
-            }
-        } header: {
-            Text("参考学习")
-        } footer: {
-            Text("参考学习已内置 \(LearningStore.shared.bundledCount) 条样本；命中时按 max(AI, 学习分) 抬升，不降权。")
-                .font(.caption2)
-        }
-        .fileImporter(
-            isPresented: $importing,
-            allowedContentTypes: [.zip, .data],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                let gained = url.startAccessingSecurityScopedResource()
-                defer { if gained { url.stopAccessingSecurityScopedResource() } }
-                do {
-                    let outcome = try LearningStore.shared.importPack(from: url)
-                    message = outcome.message
-                } catch {
-                    message = "导入失败：\(error.localizedDescription)"
-                }
-            case .failure(let error):
-                message = "选择文件失败：\(error.localizedDescription)"
-            }
-        }
-        .sheet(isPresented: $exporting) {
-            if let url = exportURL {
-                ShareSheet(items: [url])
-            }
+            Divider().padding(.leading, 14)
+
+            Text("内置 \(LearningStore.shared.bundledCount) 条样本；命中时按 max(AI, 学习分) 抬升，不降权。")
+                .font(.system(size: 11))
+                .foregroundColor(UI.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
         }
     }
 
@@ -231,9 +234,7 @@ struct LearningSection: View {
         let url = documents.appendingPathComponent("PicSeek-Learning.zip")
         do {
             let count = try LearningStore.shared.exportPack(to: url)
-            exportURL = url
-            exporting = true
-            message = "已导出 \(count) 个样本"
+            message = "已导出 \(count) 个样本：\(url.lastPathComponent)"
         } catch {
             message = "导出失败：\(error.localizedDescription)"
         }

@@ -40,6 +40,24 @@ final class SearchModel: ObservableObject {
     @Published var busy = false
     @Published var progressText = ""
     @Published var progressValue: Double = 0
+    @Published var elapsed: Double = 0
+    private var ticker: Timer?
+
+    func startTicker() {
+        stopTicker()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.elapsed += 0.1
+            if self.progressValue < 0.97 {
+                self.progressValue = min(0.97, self.progressValue + 0.0025)
+            }
+        }
+    }
+
+    func stopTicker() {
+        ticker?.invalidate()
+        ticker = nil
+    }
     @Published var hits: [SearchHit] = []
     @Published var timings: SearchTimings?
     @Published var note = ""
@@ -75,12 +93,15 @@ final class SearchModel: ObservableObject {
         timings = nil
         note = ""
         progressText = "准备中…"
+        progressValue = 0
+        elapsed = 0
         queryThumb = image
         lastStep = ""
         ProbeTrace.clear()
         ProbeTrace.mark(.start)
         prepare(package: package)
 
+        startTicker()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
             do {
@@ -119,7 +140,8 @@ final class SearchModel: ObservableObject {
                     self.hits = outcome.hits
                     self.timings = outcome.timings
                     self.note = outcome.note
-                    self.busy = false
+                    self.stopTicker()
+            self.busy = false
                     self.progressText = ""
                     self.queryThumb = image
                     self.lastStep = ""
@@ -127,7 +149,8 @@ final class SearchModel: ObservableObject {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.busy = false
+                    self.stopTicker()
+            self.busy = false
                     self.progressText = ""
                     if case InstallError.cancelled = error {
                         self.note = "已取消搜索"
@@ -263,7 +286,7 @@ struct SearchView: View {
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(UI.textPrimary)
 
-                Text("\(Int(model.progressValue * 100))% · 正在比对花型")
+                Text("\(Int(model.progressValue * 100))% · 已用 \(String(format: "%.1f", model.elapsed)) 秒")
                     .font(.system(size: 11))
                     .foregroundColor(UI.textSecondary)
 

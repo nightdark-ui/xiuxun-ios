@@ -8,7 +8,7 @@ struct CropScreen: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var rect = CGRect(x: 0.08, y: 0.08, width: 0.84, height: 0.84)
-    @State private var startRect: CGRect = .zero
+    @State private var startRect: CGRect?
     @State private var touched = false
 
     private var didCrop: Bool {
@@ -151,47 +151,51 @@ struct CropScreen: View {
     private func resizeGesture(fitted: CGRect, corner: Corner) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                if !touched { startRect = rect; touched = true }
+                if startRect == nil { startRect = rect; touched = true }
                 let dx = value.translation.width / fitted.width
                 let dy = value.translation.height / fitted.height
-                var next = startRect
+                guard let base = startRect else { return }
+                var next = base
                 switch corner {
                 case .topLeft:
-                    let newX = clamp(startRect.minX + dx, 0, startRect.maxX - 0.08)
-                    let newY = clamp(startRect.minY + dy, 0, startRect.maxY - 0.08)
+                    let newX = clamp(base.minX + dx, 0, base.maxX - 0.08)
+                    let newY = clamp(base.minY + dy, 0, base.maxY - 0.08)
                     next = CGRect(x: newX, y: newY,
-                                  width: startRect.maxX - newX, height: startRect.maxY - newY)
+                                  width: base.maxX - newX, height: base.maxY - newY)
                 case .topRight:
-                    let newMaxX = clamp(startRect.maxX + dx, startRect.minX + 0.08, 1)
-                    let newY = clamp(startRect.minY + dy, 0, startRect.maxY - 0.08)
-                    next = CGRect(x: startRect.minX, y: newY,
-                                  width: newMaxX - startRect.minX, height: startRect.maxY - newY)
+                    let newMaxX = clamp(base.maxX + dx, base.minX + 0.08, 1)
+                    let newY = clamp(base.minY + dy, 0, base.maxY - 0.08)
+                    next = CGRect(x: base.minX, y: newY,
+                                  width: newMaxX - base.minX, height: base.maxY - newY)
                 case .bottomLeft:
-                    let newX = clamp(startRect.minX + dx, 0, startRect.maxX - 0.08)
-                    let newMaxY = clamp(startRect.maxY + dy, startRect.minY + 0.08, 1)
-                    next = CGRect(x: newX, y: startRect.minY,
-                                  width: startRect.maxX - newX, height: newMaxY - startRect.minY)
+                    let newX = clamp(base.minX + dx, 0, base.maxX - 0.08)
+                    let newMaxY = clamp(base.maxY + dy, base.minY + 0.08, 1)
+                    next = CGRect(x: newX, y: base.minY,
+                                  width: base.maxX - newX, height: newMaxY - base.minY)
                 case .bottomRight:
-                    let newMaxX = clamp(startRect.maxX + dx, startRect.minX + 0.08, 1)
-                    let newMaxY = clamp(startRect.maxY + dy, startRect.minY + 0.08, 1)
-                    next = CGRect(x: startRect.minX, y: startRect.minY,
-                                  width: newMaxX - startRect.minX, height: newMaxY - startRect.minY)
+                    let newMaxX = clamp(base.maxX + dx, base.minX + 0.08, 1)
+                    let newMaxY = clamp(base.maxY + dy, base.minY + 0.08, 1)
+                    next = CGRect(x: base.minX, y: base.minY,
+                                  width: newMaxX - base.minX, height: newMaxY - base.minY)
                 }
                 rect = next
             }
+                .onEnded { _ in startRect = nil }
     }
 
     private func moveGesture(fitted: CGRect) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { value in
-                if !touched { startRect = rect; touched = true }
-                var next = startRect
-                next.origin.x = clamp(startRect.minX + value.translation.width / fitted.width,
-                                      0, 1 - startRect.width)
-                next.origin.y = clamp(startRect.minY + value.translation.height / fitted.height,
-                                      0, 1 - startRect.height)
+                if startRect == nil { startRect = rect; touched = true }
+                guard let base = startRect else { return }
+                var next = base
+                next.origin.x = clamp(base.minX + value.translation.width / fitted.width,
+                                      0, 1 - base.width)
+                next.origin.y = clamp(base.minY + value.translation.height / fitted.height,
+                                      0, 1 - base.height)
                 rect = next
             }
+            .onEnded { _ in startRect = nil }
     }
 
     // MARK: - 工具
