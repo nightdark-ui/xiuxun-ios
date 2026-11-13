@@ -362,6 +362,10 @@ struct SearchView: View {
                     }
                     Toggle("局部来图优先", isOn: $settings.localFirst)
                         .font(.system(size: 13))
+                    Toggle("循环花型增强（较慢）", isOn: $settings.allowRepeat)
+                        .font(.system(size: 13))
+                    Toggle("镜像搜索（更慢）", isOn: $settings.mirrorEnabled)
+                        .font(.system(size: 13))
                 }
                 .disabled(model.busy)
             }

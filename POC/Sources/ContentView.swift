@@ -186,11 +186,7 @@ struct ContentView: View {
                     }
                     .disabled(app.verifying)
 
-                    Button(role: .destructive) {
-                        app.clearGallery()
-                    } label: {
-                        Text("删除图库").font(.footnote)
-                    }
+                    // 删除图库按钮已隐藏
                     Spacer()
                 }
 

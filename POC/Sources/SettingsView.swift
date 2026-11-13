@@ -93,10 +93,7 @@ struct SettingsView: View {
             Section {
                 Toggle("深度复核（更准、更慢）", isOn: $settings.deepReview)
                 Toggle("自动裁切主体", isOn: $settings.autoCrop)
-                Toggle("循环花型增强（实验，较慢）", isOn: $settings.allowRepeat)
-                Toggle("局部来图优先", isOn: $settings.localFirst)
                 Toggle("旋转搜索（8 个角度）", isOn: $settings.rotationEnabled)
-                Toggle("镜像搜索（更慢，默认关）", isOn: $settings.mirrorEnabled)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("识别严格度").font(.system(size: 14))
                     Segmented(
@@ -133,13 +130,45 @@ struct SettingsView: View {
             LearningSection()
 
             Section {
+                Button {
+                    showProbe = true
+                } label: {
+                    HStack {
+                        Text("性能诊断")
+                        Spacer()
+                        Text("线程数 \(DeviceInfo.savedBestThreads)")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } header: {
+                Text("诊断")
+            } footer: {
+                Text("查看/修改推理线程数。线程数只影响速度，不影响搜索结果。")
+                    .font(.caption2)
+            }
+
+            Section {
                 Text(DeviceInfo.summary).font(.caption2)
-                Text("线程数在「图库 → 性能诊断」里标定，保存后自动生效")
+                Text("线程信息与图库容量")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             } header: {
                 Text("设备")
             }
+            Section {
+                HStack {
+                    Text("版本")
+                    Spacer()
+                    Text("\(AppInfo.version) · 构建 \(AppInfo.build)")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+
         }
         .navigationTitle("设置")
         .sheet(isPresented: $showProbe) { ProbePanelView() }
