@@ -349,7 +349,7 @@ struct SearchView: View {
         let selected = settings.libraryFilter.contains(item.name)
         return Button {
             if selected {
-                settings.libraryFilter.removeAll { $0 == item.name }
+                settings.libraryFilter.remove(item.name)
             } else {
                 settings.libraryFilter.insert(item.name)
             }
