@@ -192,6 +192,8 @@ struct SearchView: View {
             .padding(.bottom, 24)
         }
         .background(UI.pageBackground.ignoresSafeArea())
+        .overlay(Group { if model.busy { searchOverlay } })
+        .animation(.easeInOut(duration: 0.2), value: model.busy)
         .sheet(isPresented: $showPicker) {
             ImagePicker(sourceType: .photoLibrary) { cropImage = $0 }
         }
