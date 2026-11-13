@@ -83,6 +83,7 @@ final class AppSettings: ObservableObject {
 
 struct SettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var showProbe = false
 
     var body: some View {
         Form {
@@ -141,6 +142,7 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("设置")
+        .sheet(isPresented: \) { ProbePanelView() }
     }
 }
 

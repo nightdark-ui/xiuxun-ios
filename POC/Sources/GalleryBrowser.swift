@@ -20,6 +20,9 @@ struct GalleryBrowser: View {
         if !selectedLibrary.isEmpty {
             list = list.filter { $0.library == selectedLibrary }
         }
+        // 按编号自然排序（TM 条码等库的 index 顺序是乱的）
+        list.sort { $0.code.localizedStandardCompare($1.code) == .orderedAscending }
+
         let key = keyword.trimmingCharacters(in: .whitespaces).uppercased()
         if !key.isEmpty {
             list = list.filter {

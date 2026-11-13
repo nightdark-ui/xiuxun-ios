@@ -32,7 +32,6 @@ struct ContentView: View {
                         archiveHero
                         archiveStats
                         galleryCard
-                        probeEntry
                     }
                     .padding(20)
                 }
@@ -160,13 +159,19 @@ struct ContentView: View {
                 NavigationLink {
                     GalleryBrowser(app: app)
                 } label: {
-                    Text("浏览图库")
-                        .font(.footnote).bold()
-                        .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(UI.orange)
-                        .foregroundColor(.white)
-                        .clipShape(Capsule())
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("浏览图库")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(UI.orange)
+                    .foregroundColor(.white)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
+                .buttonStyle(.plain)
 
                 HStack(spacing: 10) {
                     Button {
