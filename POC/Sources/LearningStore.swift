@@ -286,6 +286,18 @@ final class LearningStore: ObservableObject {
 
     func addSample(featureUUID: String, cls: [Float], tiles: [Float]) -> Bool {
         guard !featureUUID.isEmpty, !cls.isEmpty, cls.count % 384 == 0 else { return false }
+        // 去重：同款 + 特征几乎相同（重复点击/重复确认）不再新增
+        if let existing = samples.first(where: { $0.featureUUID == featureUUID }) {
+            let limit = min(64, min(existing.cls.count, cls.count))
+            if limit > 0 {
+                var same = 0
+                for i in 0..<limit where abs(existing.cls[i] - cls[i]) < 0.0005 { same += 1 }
+                if Double(same) / Double(limit) > 0.99 {
+                    lastAddedSampleID = existing.sampleID
+                    return false
+                }
+            }
+        }
         let sample = ReferenceSample(
             featureUUID: featureUUID,
             sampleID: "local-\(Int(Date().timeIntervalSince1970))",
