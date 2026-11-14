@@ -128,13 +128,6 @@ jobs:
           ls -lh "$NAME"
           echo "IPA_NAME=$NAME" >> "$GITHUB_ENV"
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
-        with:
-          name: PicSeek-v1.0.${{ github.run_number }}-ipa
-          path: POC/PicSeek-v1.0.*.ipa
-          retention-days: 14
-
       - name: Dump logs
         if: always()
         run: |
@@ -157,13 +150,3 @@ jobs:
           cp POC/PicSeek-v1.0.*.ipa /tmp/PicSeek-latest-unsigned.ipa
           gh release upload latest /tmp/PicSeek-latest-unsigned.ipa --clobber
 
-      - name: Upload logs (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            POC/build.log
-            POC/pod-install.log
-          if-no-files-found: ignore
-          retention-days: 7
