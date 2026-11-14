@@ -184,22 +184,6 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            // 诊断款号：输出召回名次与最终名次
-        let diagnostic = options.diagnosticCode.trimmingCharacters(in: .whitespaces)
-        if !diagnostic.isEmpty {
-            if let design = package.designs.first(where: {
-                $0.code.uppercased() == diagnostic.uppercased()
-            }) {
-                let recallRank = ranked.firstIndex(where: { $0.index == design.index }).map { $0 + 1 }
-                let finalRank = finalList.firstIndex(where: { $0.design.index == design.index }).map { $0 + 1 }
-                let recallText = recallRank.map { "第\($0)" } ?? "未入围"
-                let finalText = finalRank.map { "第\($0)" } ?? "未入围"
-                note += "；诊断 \(design.code)：召回\(recallText)，最终\(finalText)"
-            } else {
-                note += "；诊断 \(diagnostic)：图库里没有这个款号"
-            }
-        }
-
         timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
@@ -570,6 +554,23 @@ final class GallerySearch {
         }
         finalList = scored.sorted { $0.score > $1.score }
         note += note.isEmpty ? "已按 PC 公式打分" : "；已按 PC 公式打分"
+
+            // 诊断款号：输出召回名次与最终名次
+        let diagnostic = options.diagnosticCode.trimmingCharacters(in: .whitespaces)
+        if !diagnostic.isEmpty {
+            if let design = package.designs.first(where: {
+                $0.code.uppercased() == diagnostic.uppercased()
+            }) {
+                let recallRank = ranked.firstIndex(where: { $0.index == design.index }).map { $0 + 1 }
+                let finalRank = finalList.firstIndex(where: { $0.design.index == design.index }).map { $0 + 1 }
+                let recallText = recallRank.map { "第\($0)" } ?? "未入围"
+                let finalText = finalRank.map { "第\($0)" } ?? "未入围"
+                note += "；诊断 \(design.code)：召回\(recallText)，最终\(finalText)"
+            } else {
+                note += "；诊断 \(diagnostic)：图库里没有这个款号"
+            }
+        }
+
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
