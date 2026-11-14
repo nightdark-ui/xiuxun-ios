@@ -186,7 +186,7 @@ struct LearningSection: View {
                 HStack {
                     Text("学习样本").font(.system(size: 15)).foregroundColor(UI.textPrimary)
                     Spacer()
-                    Text("\(LearningStore.shared.totalSamples) 个 / \(LearningStore.shared.uuidCount) 款")
+                    Text("本地 \(LearningStore.shared.totalSamples) 条 · 共 \(LearningStore.shared.uuidCount) 款")
                         .font(.system(size: 13))
                         .foregroundColor(UI.textSecondary)
                     Image(systemName: "chevron.right")

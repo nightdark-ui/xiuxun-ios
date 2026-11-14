@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// 学习样本管理：列出已确认的样本，可逐条删除
+/// 学习样本管理：列出已确认/导入的样本，可左滑或点垃圾桶删除，可一键清空
 struct LearningSamplesView: View {
     @ObservedObject private var store = LearningStore.shared
     @ObservedObject var app: AppState
+    @State private var confirmClear = false
 
     private func code(for uuid: String) -> String? {
         app.package?.designs.first(where: { $0.featureUUID == uuid })?.code
@@ -15,9 +16,33 @@ struct LearningSamplesView: View {
 
     var body: some View {
         List {
+            Section {
+                HStack {
+                    Text("本地样本")
+                    Spacer()
+                    Text("\(store.totalSamples) 条")
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("内置样本")
+                    Spacer()
+                    Text("\(store.bundledCount) 条（\(store.bundledUUIDCount) 款）")
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("合计覆盖")
+                    Spacer()
+                    Text("\(store.uuidCount) 款")
+                        .foregroundColor(UI.orange)
+                }
+            } footer: {
+                Text("内置样本打包在 App 里，不可删除；本地样本是你确认或导入的，可删除。")
+                    .font(.system(size: 11))
+            }
+
             if store.samples.isEmpty {
                 Section {
-                    Text("还没有学习样本")
+                    Text("还没有本地样本")
                         .foregroundColor(.secondary)
                     Text("在搜索结果第 11 名以后点「确认是这款」，或在搜索页手动输入款号确认。")
                         .font(.system(size: 12))
@@ -34,38 +59,52 @@ struct LearningSamplesView: View {
                                     Text(library(for: sample.featureUUID) ?? "未知库")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
-                                    Text("· 条 \(sample.sampleID.suffix(6))")
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(.secondary)
                                     Text("· \(sample.clsRows) 行")
                                         .font(.system(size: 11))
                                         .foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
-                            Button(role: .destructive) {
+                            Button {
                                 _ = store.removeSample(sampleID: sample.sampleID)
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 15))
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.red)
+                                    .padding(8)
+                                    .contentShape(Rectangle())
                             }
-                            .buttonStyle(.borderless)
+                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 2)
                     }
+                    .onDelete { offsets in
+                        let ids = offsets.map { store.samples[$0].sampleID }
+                        for id in ids { _ = store.removeSample(sampleID: id) }
+                    }
+                } header: {
+                    Text("本地样本（左滑可删除）")
                 } footer: {
                     Text("删除后该款不再享受学习加成，立即生效。")
                         .font(.system(size: 11))
                 }
-            }
 
-            Section {
-                Text("内置样本 \(store.bundledCount) 条（打包在 App 里，不可删除）")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                Section {
+                    Button(role: .destructive) {
+                        confirmClear = true
+                    } label: {
+                        Text("清空全部本地样本")
+                    }
+                }
             }
         }
         .navigationTitle("学习样本")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("清空全部本地样本？", isPresented: $confirmClear) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) { store.clear() }
+        } message: {
+            Text("内置样本不受影响。此操作不可撤销。")
+        }
     }
 }

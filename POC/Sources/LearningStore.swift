@@ -102,6 +102,12 @@ final class LearningStore: ObservableObject {
         return bundled.count
     }
 
+    /// 内置样本覆盖的款数
+    var bundledUUIDCount: Int {
+        if !bundledLoaded { loadBundled() }
+        return Set(bundled.map { $0.featureUUID }).count
+    }
+
     /// 查询图与内置样本的最大余弦（按款 uuid 汇总）
     func bundledBoostMap(queryRows: [[Float]]) -> [String: Double] {
         if !bundledLoaded { loadBundled() }
