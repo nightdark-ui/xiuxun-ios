@@ -65,16 +65,6 @@ struct LearningSamplesView: View {
                                 }
                             }
                             Spacer()
-                            Button {
-                                _ = store.removeSample(sampleID: sample.sampleID)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.red)
-                                    .padding(8)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
                         }
                         .padding(.vertical, 2)
                     }
@@ -100,11 +90,17 @@ struct LearningSamplesView: View {
         }
         .navigationTitle("学习样本")
         .navigationBarTitleDisplayMode(.inline)
-        .alert("清空全部本地样本？", isPresented: $confirmClear) {
+        .confirmationDialog(
+            "确定清空全部本地样本？",
+            isPresented: $confirmClear,
+            titleVisibility: .visible
+        ) {
+            Button("清空 \(store.totalSamples) 条（不可恢复）", role: .destructive) {
+                store.clear()
+            }
             Button("取消", role: .cancel) {}
-            Button("清空", role: .destructive) { store.clear() }
         } message: {
-            Text("内置样本不受影响。此操作不可撤销。")
+            Text("内置样本不受影响。")
         }
     }
 }
