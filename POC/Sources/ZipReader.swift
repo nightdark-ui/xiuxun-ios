@@ -1,4 +1,5 @@
 import Foundation
+import Compression
 
 /// 极简 ZIP 读取器（只支持 store 模式；numpy 的 savez 默认就是 store）。
 struct ZipReader {
@@ -6,6 +7,8 @@ struct ZipReader {
         let name: String
         let offset: Int
         let size: Int
+        let method: Int
+        let uncompressedSize: Int
     }
 
     private let data: Data
@@ -26,6 +29,8 @@ struct ZipReader {
             let commentLength = Int(Self.uint16(data, cursor + 32))
             let localOffset = Int(Self.uint32(data, cursor + 42))
             let compressedSize = Int(Self.uint32(data, cursor + 20))
+            let uncompressedSize = Int(Self.uint32(data, cursor + 24))
+            let method = Int(Self.uint16(data, cursor + 10))
 
             let nameStart = cursor + 46
             guard nameStart + nameLength <= data.count else { break }
@@ -40,7 +45,13 @@ struct ZipReader {
                 let localExtraLength = Int(Self.uint16(data, localOffset + 28))
                 let dataStart = localOffset + 30 + localNameLength + localExtraLength
                 if dataStart + compressedSize <= data.count {
-                    items.append(Item(name: name, offset: dataStart, size: compressedSize))
+                    items.append(Item(
+                        name: name,
+                        offset: dataStart,
+                        size: compressedSize,
+                        method: method,
+                        uncompressedSize: uncompressedSize
+                    ))
                 }
             }
             cursor = nameStart + nameLength + extraLength + commentLength
@@ -49,7 +60,26 @@ struct ZipReader {
     }
 
     func payload(_ item: Item) -> Data {
-        data.subdata(in: item.offset..<(item.offset + item.size))
+        let raw = data.subdata(in: item.offset..<(item.offset + item.size))
+        if item.method == 0 {
+            return raw
+        }
+        guard item.method == 8 else { return raw }
+        return Self.inflate(raw, size: item.uncompressedSize) ?? raw
+    }
+
+    /// 原始 deflate 解压（ZIP 的 method 8）
+    private static func inflate(_ raw: Data, size: Int) -> Data? {
+        guard size > 0 else { return Data() }
+        var output = [UInt8](repeating: 0, count: size)
+        let written = output.withUnsafeMutableBufferPointer { out -> Int in
+            raw.withUnsafeBytes { input -> Int in
+                guard let base = input.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                return compression_decode_buffer(out.baseAddress!, size, base, raw.count, nil, COMPRESSION_ZLIB)
+            }
+        }
+        guard written > 0 else { return nil }
+        return Data(output.prefix(written))
     }
 
     func payload(named name: String) -> Data? {
