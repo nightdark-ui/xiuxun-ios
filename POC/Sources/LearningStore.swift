@@ -14,10 +14,10 @@ struct ReferenceSample: Codable {
 }
 
 /// 参考学习存储 + 学习包导入导出（安卓 `xiuxun-learning` v1）
-final class LearningStore {
+final class LearningStore: ObservableObject {
     static let shared = LearningStore()
 
-    private(set) var samples: [ReferenceSample] = []
+    @Published private(set) var samples: [ReferenceSample] = []
     private var byUUID: [String: [ReferenceSample]] = [:]
     private let queue = DispatchQueue(label: "xiuxun.learning")
 
