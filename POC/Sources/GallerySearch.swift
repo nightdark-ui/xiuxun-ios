@@ -184,7 +184,23 @@ final class GallerySearch {
         var note = ""
         if candidates.isEmpty {
             timings.recallMs = Date().timeIntervalSince(recallStart) * 1000
-            timings.totalMs = Date().timeIntervalSince(started) * 1000
+            // 诊断款号：输出召回名次与最终名次
+        let diagnostic = options.diagnosticCode.trimmingCharacters(in: .whitespaces)
+        if !diagnostic.isEmpty {
+            if let design = package.designs.first(where: {
+                $0.code.uppercased() == diagnostic.uppercased()
+            }) {
+                let recallRank = ranked.firstIndex(where: { $0.index == design.index }).map { $0 + 1 }
+                let finalRank = finalList.firstIndex(where: { $0.design.index == design.index }).map { $0 + 1 }
+                let recallText = recallRank.map { "第\($0)" } ?? "未入围"
+                let finalText = finalRank.map { "第\($0)" } ?? "未入围"
+                note += "；诊断 \(design.code)：召回\(recallText)，最终\(finalText)"
+            } else {
+                note += "；诊断 \(diagnostic)：图库里没有这个款号"
+            }
+        }
+
+        timings.totalMs = Date().timeIntervalSince(started) * 1000
             return SearchOutcome(hits: [], timings: timings, note: "没有可搜索的款（检查图库筛选）")
         }
 
@@ -504,6 +520,27 @@ final class GallerySearch {
         }
 
         let refMap = LearningStore.shared.boostMap(queryRows: query.clsRows)
+
+        // 学习样本强制入围：人工确认过的款即使不在前 N，也参与最终打分
+        if !refMap.isEmpty {
+            var existing = Set(finalList.map { $0.design.index })
+            var byUUID: [String: DesignRef] = [:]
+            for design in package.designs { byUUID[design.featureUUID] = design }
+            for (uuid, ref) in refMap where ref >= 0.72 {
+                guard let design = byUUID[uuid], !existing.contains(design.index) else { continue }
+                guard let cand = candidates.first(where: { $0.index == design.index }) else { continue }
+                finalList.append(SearchHit(
+                    design: design,
+                    score: 0,
+                    clsScore: cand.cls,
+                    tileScore: cand.tile,
+                    baseScore: baseSims[design.index] ?? 0,
+                    aiScore: ref
+                ))
+                existing.insert(design.index)
+            }
+        }
+
         var scored: [SearchHit] = []
         scored.reserveCapacity(finalList.count)
         for var hit in finalList {
@@ -521,7 +558,7 @@ final class GallerySearch {
             let old = PCScoreFinal.oldScore(local: local, edge: edge, stats: sims)
 
             var aiComp = PCScoreFinal.aiComponent(hit.aiScore)
-            if let ref = refMap[hit.design.featureUUID], ref >= 0.9 {
+            if let ref = refMap[hit.design.featureUUID], ref >= 0.72 {
                 aiComp = PCScoreFinal.aiComponent(ref)
             }
             if hit.baseScore > 0 {
