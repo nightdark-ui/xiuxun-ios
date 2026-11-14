@@ -41,6 +41,11 @@ final class SearchModel: ObservableObject {
     @Published var progressText = ""
     @Published var progressValue: Double = 0
     @Published var elapsed: Double = 0
+    /// 上次搜索用时（秒），用于估算本次进度；首次默认 32 秒
+    var estimatedSeconds: Double {
+        get { UserDefaults.standard.double(forKey: "perf.estimatedSeconds") }
+        set { UserDefaults.standard.set(newValue, forKey: "perf.estimatedSeconds") }
+    }
     private var ticker: Timer?
 
     func startTicker() {
@@ -48,9 +53,9 @@ final class SearchModel: ObservableObject {
         ticker = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.elapsed += 0.1
-            if self.progressValue < 0.97 {
-                self.progressValue = min(0.97, self.progressValue + 0.0025)
-            }
+            let estimate = max(6, self.estimatedSeconds > 0 ? self.estimatedSeconds : 32)
+            // 线性推进，最多到 96%，剩下 4% 留给收尾
+            self.progressValue = min(0.96, self.elapsed / estimate)
         }
     }
 
@@ -140,7 +145,8 @@ final class SearchModel: ObservableObject {
                     self.hits = outcome.hits
                     self.timings = outcome.timings
                     self.note = outcome.note
-                    self.stopTicker()
+                    self.progressValue = 1.0
+            self.stopTicker()
             self.busy = false
                     self.progressText = ""
                     self.queryThumb = image
@@ -149,7 +155,8 @@ final class SearchModel: ObservableObject {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.stopTicker()
+                    self.progressValue = 1.0
+            self.stopTicker()
             self.busy = false
                     self.progressText = ""
                     if case InstallError.cancelled = error {
@@ -218,6 +225,7 @@ struct SearchView: View {
                 if !model.hits.isEmpty { manualCard }
                 if let timings = model.timings {
                     LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
+                        // 结果区锚点：搜索完成后滚动到这里
                         Section {
                             resultGrid
                             if !model.hits.isEmpty { deepReviewAgain }
@@ -227,16 +235,19 @@ struct SearchView: View {
                                 .background(UI.pageBackground)
                         }
                     }
+                    .id("resultsAnchor")
                 } else {
                     resultGrid
                 }
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 24)
-            .onChange(of: model.hits.count) { count in
-                guard count > 0, !model.busy else { return }
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    proxy.scrollTo("resultsTop", anchor: .top)
+            .onChange(of: model.busy) { busy in
+                guard !busy, !model.hits.isEmpty else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    withAnimation(.easeInOut(duration: 0.35)) {
+                        proxy.scrollTo("resultsAnchor", anchor: .top)
+                    }
                 }
             }
             .id("resultsTop")
@@ -547,25 +558,26 @@ struct SearchView: View {
     private func resultHeader(_ timings: SearchTimings) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             if let query = model.queryThumb {
-                HStack(spacing: 10) {
+                HStack(spacing: 12) {
                     Image(uiImage: query)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 54, height: 54)
-                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
+                        .frame(width: 132, height: 132)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("客户来图")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(UI.textSecondary)
                         Text("对照下面的第 1 名查看")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13))
                             .foregroundColor(UI.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer()
+                    Spacer(minLength: 0)
                 }
-                .padding(8)
+                .padding(10)
                 .background(UI.orange.opacity(0.07))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             HStack {
                 Text("找到 \(model.hits.count) 个结果")
