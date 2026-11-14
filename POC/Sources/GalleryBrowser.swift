@@ -8,11 +8,9 @@ struct GalleryBrowser: View {
     @State private var keyword: String = ""
     @State private var selected: DesignRef?
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-        GridItem(.flexible(), spacing: 8),
-    ]
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 150, maximum: 240), spacing: 8)]
+    }
 
     private var designs: [DesignRef] {
         guard let package = app.package else { return [] }

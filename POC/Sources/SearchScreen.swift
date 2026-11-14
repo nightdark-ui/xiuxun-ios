@@ -201,10 +201,10 @@ struct SearchView: View {
     @State private var detail: SearchHit?
     @State private var showScope = false
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
-    ]
+    /// 自适应列数：iPhone 2 列，iPad 更宽时自动 3–4 列
+    private var columns: [GridItem] {
+        [GridItem(.adaptive(minimum: 160, maximum: 260), spacing: 10)]
+    }
 
     private var resultOptions: [String] { ["30", "40", "60"] }
     private var resultIndex: Int {
