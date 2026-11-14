@@ -303,6 +303,26 @@ final class LearningStore: ObservableObject {
         var skipped = 0
         var imported: [ReferenceSample] = []
 
+        // 安卓学习包：samples/<sample_id>.npz，uuid 写在 manifest.json 里
+        var manifestMap: [String: (uuid: String, sampleID: String)] = [:]
+        if let manifestData = reader.payload(named: "manifest.json"),
+           let object = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
+           let list = object["samples"] as? [[String: Any]] {
+            for item in list {
+                let uuid = item["feature_uuid"] as? String ?? ""
+                let sampleID = item["sample_id"] as? String ?? ""
+                var stem = ""
+                if let reference = item["reference_file"] as? String {
+                    stem = (reference as NSString).lastPathComponent
+                    stem = (stem as NSString).deletingPathExtension
+                }
+                if stem.isEmpty { stem = sampleID }
+                if !uuid.isEmpty, !stem.isEmpty {
+                    manifestMap[stem] = (uuid, sampleID.isEmpty ? stem : sampleID)
+                }
+            }
+        }
+
         for item in reader.items where item.name.hasSuffix(".npz") {
             guard let npzData = reader.payload(named: item.name),
                   let npz = ZipReader(npzData) else {
@@ -312,8 +332,10 @@ final class LearningStore: ObservableObject {
             let name = (item.name as NSString).lastPathComponent
             let stem = (name as NSString).deletingPathExtension
             let parts = stem.split(separator: "_", maxSplits: 1)
-            let uuid = parts.first.map(String.init) ?? stem
-            let sampleID = parts.count > 1 ? String(parts[1]) : "0"
+            // 优先用 manifest 映射（安卓包文件名只有 sample_id）
+            let mapped = manifestMap[stem]
+            let uuid = mapped?.uuid ?? parts.first.map(String.init) ?? stem
+            let sampleID = mapped?.sampleID ?? (parts.count > 1 ? String(parts[1]) : "0")
 
             var cls: [Float] = []
             var tiles: [Float] = []
