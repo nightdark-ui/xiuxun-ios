@@ -106,7 +106,7 @@ jobs:
           xcodebuild \
             -workspace XiuxunPOC.xcworkspace \
             -scheme XiuxunPOC \
-            -configuration Release CURRENT_PROJECT_VERSION= \
+            -configuration Release CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER \
             -sdk iphoneos \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
@@ -121,6 +121,9 @@ jobs:
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
           echo "APP=$APP"
           test -n "$APP"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $GITHUB_RUN_NUMBER" "$APP/Info.plist" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.0" "$APP/Info.plist" || true
+          echo "bundle version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist")"
           mkdir -p Payload
           cp -R "$APP" Payload/
           NAME="PicSeek-v1.0.${GITHUB_RUN_NUMBER}-unsigned.ipa"
