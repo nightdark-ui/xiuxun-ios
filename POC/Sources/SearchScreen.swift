@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 import UIKit
 
 /// 系统相册/相机选择器
@@ -248,6 +249,23 @@ struct SearchView: View {
                 BrandHeader()
                 heroCard
                 queryCard
+                Button {
+                    showMultiPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text(batchRunning ? "多图搜索中…" : "多图搜索（最多 3 张）")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(UI.orange.opacity(0.10))
+                    .foregroundColor(UI.orange)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.busy || batchRunning)
                 scopeCard
                 codeRangeCard
                 if model.busy { progressCard }
@@ -275,13 +293,17 @@ struct SearchView: View {
                         }
                     }
                 }
-                if !model.hits.isEmpty { manualCard }
-                if let timings = model.timings {
+                if batchPages.count > 1 {
+                    batchPager
+                } else if !model.hits.isEmpty {
+                    manualCard
+                }
+                if batchPages.count <= 1, let timings = model.timings {
                     LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
                         // 结果区锚点：搜索完成后滚动到这里
                         Section {
                             resultGrid
-                            if !model.hits.isEmpty { deepReviewAgain }
+                            if batchPages.count <= 1, !model.hits.isEmpty { deepReviewAgain }
                         } header: {
                             resultHeader(timings)
                                 .padding(.vertical, 6)
@@ -289,7 +311,7 @@ struct SearchView: View {
                         }
                     }
                     .id("resultsAnchor")
-                } else {
+                } else if batchPages.count <= 1 {
                     resultGrid
                 }
             }
@@ -310,6 +332,12 @@ struct SearchView: View {
         .animation(.easeInOut(duration: 0.2), value: model.busy)
         .sheet(isPresented: $showPicker) {
             ImagePicker(sourceType: .photoLibrary) { cropImage = $0 }
+        }
+        .sheet(isPresented: $showMultiPicker) {
+            MultiImagePicker(limit: 3) { images in
+                showMultiPicker = false
+                if !images.isEmpty { startBatch(images) }
+            }
         }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
@@ -514,7 +542,7 @@ struct SearchView: View {
                     }
                     Toggle("局部来图优先", isOn: $settings.localFirst)
                         .font(.system(size: 13))
-                    Toggle("循环花型增强", isOn: $settings.allowRepeat)
+                    Toggle("循环花型增强（实验性功能）", isOn: $settings.allowRepeat)
                         .font(.system(size: 13))
                     Toggle("镜像搜索", isOn: $settings.mirrorEnabled)
                         .font(.system(size: 13))
@@ -716,6 +744,10 @@ struct SearchView: View {
     @State private var manualCode = ""
     @State private var pendingImage: UIImage?
     @State private var detailRank = 0
+    @State private var batchPages: [BatchPage] = []
+    @State private var batchIndex = 0
+    @State private var showMultiPicker = false
+    @State private var batchRunning = false
     @State private var pendingCropped = false
     @State private var pendingDesign: DesignRef?
 
@@ -838,6 +870,96 @@ struct SearchView: View {
                 .foregroundColor(UI.textSecondary)
         }
         .padding(.top, 6)
+    }
+
+    /// 批量搜索：一张接一张，出一张显示一张
+    private func startBatch(_ images: [UIImage]) {
+        guard !images.isEmpty, let package = app.package else { return }
+        batchPages = []
+        batchIndex = 0
+        batchRunning = true
+        Task { @MainActor in
+            for (position, image) in images.prefix(3).enumerated() {
+                model.run(image: image, package: package)
+                while model.busy {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                }
+                let page = BatchPage(
+                    image: image,
+                    hits: model.hits,
+                    timings: model.timings,
+                    note: model.note,
+                    index: position + 1
+                )
+                batchPages.append(page)
+                batchIndex = batchPages.count - 1
+            }
+            batchRunning = false
+        }
+    }
+
+    private var batchPager: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("多图结果 \(batchIndex + 1)/\(batchPages.count)")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if batchRunning {
+                    ProgressView().scaleEffect(0.7)
+                }
+                Button("清空") {
+                    batchPages = []
+                    batchIndex = 0
+                }
+                .font(.system(size: 12))
+                .foregroundColor(UI.orange)
+            }
+
+            TabView(selection: $batchIndex) {
+                ForEach(Array(batchPages.enumerated()), id: \.offset) { offset, page in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 10) {
+                                Image(uiImage: page.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("第 \(page.index) 张 · 找到 \(page.hits.count) 个")
+                                        .font(.system(size: 13, weight: .semibold))
+                                    if let timings = page.timings {
+                                        Text(String(format: "用时 %.1f 秒", timings.totalMs / 1000))
+                                            .font(.system(size: 11))
+                                            .foregroundColor(UI.textSecondary)
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(8)
+                            .background(UI.orange.opacity(0.07))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                            LazyVGrid(columns: columns, spacing: 10) {
+                                ForEach(Array(page.hits.enumerated()), id: \.offset) { index, hit in
+                                    Button {
+                                        detail = hit
+                                        detailRank = index + 1
+                                    } label: {
+                                        resultCell(hit: hit, rank: index + 1)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .padding(.bottom, 12)
+                    }
+                    .tag(offset)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .frame(height: 620)
+        }
     }
 
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
@@ -1114,4 +1236,54 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// 多图搜索的一页结果
+struct BatchPage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let hits: [SearchHit]
+    let timings: SearchTimings?
+    let note: String
+    let index: Int
+}
+
+/// 多图选择器（最多 3 张）
+struct MultiImagePicker: UIViewControllerRepresentable {
+    var limit: Int = 3
+    var onPick: ([UIImage]) -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.selectionLimit = limit
+        config.filter = .images
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        private let parent: MultiImagePicker
+        init(_ parent: MultiImagePicker) { self.parent = parent }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            picker.dismiss(animated: true)
+            var images: [UIImage] = []
+            let group = DispatchGroup()
+            for result in results.prefix(parent.limit) {
+                group.enter()
+                result.itemProvider.loadObject(ofClass: UIImage.self) { object, _ in
+                    if let image = object as? UIImage { images.append(image) }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                self.parent.onPick(images)
+            }
+        }
+    }
 }
