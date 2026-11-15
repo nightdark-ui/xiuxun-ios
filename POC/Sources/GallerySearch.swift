@@ -330,7 +330,13 @@ final class GallerySearch {
         do {
             progress("局部匹配…")
 
-            // P0：local5（25 个细 tile 的最高分）前 60 名保送，不看综合排名。
+            // 细窗高分抬权（对齐安卓）：局部窗口非常像时，直接把 AI 分抬起来
+        for (index, value) in fineTiles where value >= 0.55 {
+            let current = aiScores[index] ?? 0
+            if value > current { aiScores[index] = value }
+        }
+
+        // P0：local5（25 个细 tile 的最高分）前 60 名保送，不看综合排名。
             // PC: local_ids = argsort(local_scores)[:60] with score > 0.20
             let localOrdered = ranked.sorted {
                 (fineTiles[$0.index] ?? 0) > (fineTiles[$1.index] ?? 0)
