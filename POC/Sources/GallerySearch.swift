@@ -189,28 +189,49 @@ final class GallerySearch {
         }
 
         // 第三召回通道：查询图 vs 全库 25 个细 tile（局部图靠它）
+        // 提速：vDSP 点积 + 多核并行（与逐元素累加数值等价）
         var fineTiles: [Int: Double] = [:]
         if let heavy = heavy, !query.clsRows.isEmpty {
             progress("细粒度比对…")
-            // 只用 8 个旋转的整图行，控制计算量
             let queryRows = query.tileRows
-            for index in 0..<package.designs.count {
-                let design = package.designs[index]
-                guard let features = heavy.features(at: design.heavyOffset) else { continue }
-                var best = 0.0
-                let tileCount = features.tiles5.count / 384
-                for row in queryRows {
-                    for tile in 0..<tileCount {
-                        let offset = tile * 384
-                        var dot = 0.0
-                        for i in 0..<384 {
-                            dot += Double(row[i]) * Double(features.tiles5[offset + i])
+            let count = package.designs.count
+            var fineScores = [Double](repeating: 0, count: count)
+
+            queryRows.withUnsafeBufferPointer { rowsPtr in
+                fineScores.withUnsafeMutableBufferPointer { scorePtr in
+                    let chunk = 128
+                    let chunks = (count + chunk - 1) / chunk
+                    DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
+                        let start = chunkIndex * chunk
+                        let end = min(start + chunk, count)
+                        for index in start..<end {
+                            guard let features = heavy.features(at: package.designs[index].heavyOffset) else { continue }
+                            let tileCount = features.tiles5.count / 384
+                            guard tileCount > 0 else { continue }
+                            var best = 0.0
+                            features.tiles5.withUnsafeBufferPointer { tilePtr in
+                                guard let tileBase = tilePtr.baseAddress else { return }
+                                for row in rowsPtr {
+                                    row.withUnsafeBufferPointer { rowPtr in
+                                        guard let rowBase = rowPtr.baseAddress else { return }
+                                        for tile in 0..<tileCount {
+                                            let offset = tile * 384
+                                            var dot: Float = 0
+                                            vDSP_dotpr(rowBase, 1, tileBase + offset, 1, &dot, 384)
+                                            if Double(dot) > best { best = Double(dot) }
+                                        }
+                                    }
+                                    if best >= 0.999 { return }
+                                }
+                            }
+                            scorePtr[index] = best
                         }
-                        if dot > best { best = dot }
-                        if best >= 0.999 { break }
                     }
                 }
-                fineTiles[index] = best
+            }
+
+            for index in 0..<count where fineScores[index] > 0 {
+                fineTiles[index] = fineScores[index]
             }
         }
 
