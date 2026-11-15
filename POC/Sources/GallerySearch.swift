@@ -20,13 +20,16 @@ struct SearchTimings {
     var encodeMs: Double = 0
     var recallMs: Double = 0
     var baseMs: Double = 0
+    var fineMs: Double = 0
+    var denseMs: Double = 0
+    var siftMs: Double = 0
     var totalMs: Double = 0
     var compared: Int = 0
 
     var text: String {
         String(
-            format: "预处理 %.0fms · 查询编码 %.0fms · 召回 %.0fms（%d 款）· base 重排 %.0fms · 合计 %.1fs",
-            preprocessMs, encodeMs, recallMs, compared, baseMs, totalMs / 1000
+            format: "预处理 %.0fms · 编码 %.0fms · 召回 %.0fms · 细窗 %.0fms · 精排 %.0fms · SIFT %.0fms · base %.0fms · 合计 %.1fs",
+            preprocessMs, encodeMs, recallMs, fineMs, denseMs, siftMs, baseMs, totalMs / 1000
         )
     }
 }
@@ -432,7 +435,11 @@ final class GallerySearch {
         if ranked.count > 1 {
             progress("base 重排…")
             let baseStart = Date()
-            if let baseQuery = try? encoder.encodeBase(enhancedGray: workingGray, size: baseSize) {
+            // 复用召回阶段已算好的 base 向量（与 PC/安卓一致：base 只前向一次）
+            let baseQuery: [Float]? = (baseSize == options.baseInputSize)
+                ? queryBaseVector
+                : (try? encoder.encodeBase(enhancedGray: workingGray, size: baseSize))
+            if let baseQuery = baseQuery {
                 let topForBase = Array(ranked.prefix(baseLimit))
                 package.withRecallPointer { base, _ in
                     for item in topForBase {
@@ -480,14 +487,18 @@ final class GallerySearch {
 
         // SIFT：查询（canonical）算一次；设计图解码后按 canonical 重算（精度优先）
         var siftScores: [Int: Double] = [:]
-        let siftQueryImage: UIImage? = {
+        // 直接用 canonical 的 RGBA（跳过 UIImage 往返，像素一致）
+        let siftQueryBytes: (data: Data, width: Int, height: Int)? = {
             if let canonical = canonicalBytes {
-                return ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512)
+                return (canonical, 512, 512)
             }
-            return queryImage
+            if let queryImage = queryImage, let raw = ImageOps.rgbaBytes(queryImage) {
+                return (raw.data, raw.width, raw.height)
+            }
+            return nil
         }()
-        if let siftQueryImage = siftQueryImage,
-           let queryBytes = ImageOps.rgbaBytes(siftQueryImage),
+        let siftStart = Date()
+        if let queryBytes = siftQueryBytes,
            let queryFeatures = CVLocalMatcher.extractFeatures(
                queryBytes.data,
                width: queryBytes.width,
@@ -523,13 +534,11 @@ final class GallerySearch {
                             return value
                         }()
                         guard let canonical = canonicalData,
-                              let designImage = ImageOps.uiImageFromRGBA(canonical, width: 512, height: 512),
-                        let designBytes = ImageOps.rgbaBytes(designImage),
-                        let designFeatures = CVLocalMatcher.extractFeatures(
-                            designBytes.data,
-                            width: designBytes.width,
-                            height: designBytes.height
-                        ) else { return }
+                              let designFeatures = CVLocalMatcher.extractFeatures(
+                                  canonical,
+                                  width: 512,
+                                  height: 512
+                              ) else { return }
                         results[slot] = CVLocalMatcher.match(queryFeatures, against: designFeatures)
                     }
                 }
@@ -539,6 +548,7 @@ final class GallerySearch {
                 results.deallocate()
             }
         }
+        timings.siftMs = Date().timeIntervalSince(siftStart) * 1000
 
         let refMap = LearningStore.shared.boostMap(queryRows: query.clsRows)
 
