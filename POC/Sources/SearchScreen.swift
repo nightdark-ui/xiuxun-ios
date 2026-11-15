@@ -252,6 +252,29 @@ struct SearchView: View {
                 codeRangeCard
                 if model.busy { progressCard }
                 if !model.errorText.isEmpty { errorCard }
+                if model.interrupted, !model.busy {
+                    AppCard {
+                        HStack(spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(UI.orange)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("搜索被系统中断")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text("切到后台太久会被 iOS 挂起，点右侧重新搜索")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(UI.textSecondary)
+                            }
+                            Spacer()
+                            Button("重搜") {
+                                if let img = model.queryThumb, let pkg = app.package {
+                                    model.run(image: img, package: pkg)
+                                }
+                            }
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(UI.orange)
+                        }
+                    }
+                }
                 if !model.hits.isEmpty { manualCard }
                 if let timings = model.timings {
                     LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
