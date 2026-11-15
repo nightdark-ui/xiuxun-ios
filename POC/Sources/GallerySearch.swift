@@ -589,8 +589,8 @@ final class GallerySearch {
             if hit.baseScore > 0 {
                 aiComp = 0.70 * aiComp + 0.30 * PCScoreFinal.aiComponent(hit.baseScore)
             }
-            // 细窗命中：局部窗口高度相似时，允许它直接参与最终分
-            if let fine = fineTiles[index], fine >= 0.55 {
+            // 细窗抬权：仅在「局部来图优先」开启时生效（整图搜索保持基准精度）
+            if options.localFirst, let fine = fineTiles[index], fine >= 0.55 {
                 aiComp = max(aiComp, PCScoreFinal.aiComponent(fine))
             }
             hit.structureScore = old
