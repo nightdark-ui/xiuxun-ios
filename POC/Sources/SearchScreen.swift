@@ -40,6 +40,8 @@ final class SearchModel: ObservableObject {
     @Published var busy = false
     @Published var progressText = ""
     @Published var progressValue: Double = 0
+    @Published var interrupted = false
+    private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
     @Published var elapsed: Double = 0
     /// 上次搜索用时（秒），用于估算本次进度；首次默认 32 秒
     var estimatedSeconds: Double {
@@ -47,6 +49,17 @@ final class SearchModel: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "perf.estimatedSeconds") }
     }
     private var ticker: Timer?
+
+    /// 结束后台任务并恢复自动锁屏
+    func endBackground() {
+        DispatchQueue.main.async {
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        if bgTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(bgTaskID)
+            bgTaskID = .invalid
+        }
+    }
 
     func startTicker() {
         stopTicker()
@@ -100,6 +113,21 @@ final class SearchModel: ObservableObject {
         progressText = "准备中…"
         progressValue = 0
         elapsed = 0
+        interrupted = false
+
+        // 搜索期间屏幕常亮（避免自动锁屏中断）
+        DispatchQueue.main.async { UIApplication.shared.isIdleTimerDisabled = true }
+        // 切到后台时向系统申请约 30 秒的宽限期
+        bgTaskID = UIApplication.shared.beginBackgroundTask(withName: "xiuxun-search") { [weak self] in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if self.busy {
+                    self.interrupted = true
+                    self.progressText = "搜索被系统中断"
+                }
+                self.endBackground()
+            }
+        }
         queryThumb = image
         lastStep = ""
         ProbeTrace.clear()
@@ -147,6 +175,7 @@ final class SearchModel: ObservableObject {
                     self.note = outcome.note
                     self.progressValue = 1.0
             self.stopTicker()
+            self.endBackground()
             self.busy = false
                     self.progressText = ""
                     self.queryThumb = image
@@ -157,6 +186,7 @@ final class SearchModel: ObservableObject {
                 DispatchQueue.main.async {
                     self.progressValue = 1.0
             self.stopTicker()
+            self.endBackground()
             self.busy = false
                     self.progressText = ""
                     if case InstallError.cancelled = error {
