@@ -111,6 +111,13 @@ final class HeavyStore {
         }
     }
 
+    /// 展平数组（COW 引用，不复制内存）
+    var tiles5FlatCopy: [Float]? {
+        tiles5Lock.lock()
+        defer { tiles5Lock.unlock() }
+        return tiles5Flat
+    }
+
     var hasPreloadedTiles5: Bool {
         tiles5Lock.lock()
         defer { tiles5Lock.unlock() }
