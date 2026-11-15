@@ -52,6 +52,71 @@ final class HeavyStore {
     var byteSize: Int { data.count }
 
     /// 读取某个设计的重特征（按 heavyOffset）
+    // MARK: - 局部向量预加载（tiles5：每款 25×384）
+
+    /// 展平的 tiles5：count × 25 × 384 个 Float（约 133 MB）
+    private var tiles5Flat: [Float]?
+    private var tiles5Order: [Int64] = []
+    private var tiles5Lock = NSLock()
+
+    /// 预加载所有款的 25 个局部向量（只做一次）
+    @discardableResult
+    func preloadTiles5(offsets: [Int64]) -> Bool {
+        tiles5Lock.lock()
+        defer { tiles5Lock.unlock() }
+        if tiles5Flat != nil { return true }
+
+        let rows = Self.tileRows
+        let dim = Self.dim
+        let perDesign = rows * dim
+        var flat = [Float](repeating: 0, count: offsets.count * perDesign)
+
+        let bytesPerDesign = perDesign * 4
+        flat.withUnsafeMutableBufferPointer { out in
+            data.withUnsafeBytes { raw in
+                guard let base = raw.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
+                for (index, offset) in offsets.enumerated() {
+                    guard Int(offset) + bytesPerDesign <= data.count else { continue }
+                    let src = base.advanced(by: Int(offset) / 4)
+                    let dst = out.baseAddress!.advanced(by: index * perDesign)
+                    dst.update(from: src, count: perDesign)
+                }
+            }
+        }
+
+        tiles5Flat = flat
+        tiles5Order = offsets
+        return true
+    }
+
+    /// 读取预加载的某款局部向量（未预加载返回 nil）
+    func preloadedTiles5(at index: Int) -> [Float]? {
+        tiles5Lock.lock()
+        defer { tiles5Lock.unlock() }
+        guard let flat = tiles5Flat, index >= 0, index < tiles5Order.count else { return nil }
+        let perDesign = Self.tileRows * Self.dim
+        let start = index * perDesign
+        guard start + perDesign <= flat.count else { return nil }
+        return Array(flat[start..<(start + perDesign)])
+    }
+
+    /// 直接给出指针区间，避免拷贝（内部使用）
+    func withPreloadedTiles5<R>(_ body: (UnsafeBufferPointer<Float>, Int) -> R) -> R? {
+        tiles5Lock.lock()
+        defer { tiles5Lock.unlock() }
+        guard let flat = tiles5Flat else { return nil }
+        let perDesign = Self.tileRows * Self.dim
+        return flat.withUnsafeBufferPointer { buffer in
+            body(buffer, perDesign)
+        }
+    }
+
+    var hasPreloadedTiles5: Bool {
+        tiles5Lock.lock()
+        defer { tiles5Lock.unlock() }
+        return tiles5Flat != nil
+    }
+
     func features(at offset: Int64) -> DesignFeatures? {
         let key = Int(offset)
         lock.lock()

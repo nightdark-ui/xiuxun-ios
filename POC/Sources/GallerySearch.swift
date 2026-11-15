@@ -189,15 +189,46 @@ final class GallerySearch {
         }
 
         // 第三召回通道：查询图 vs 全库 25 个细 tile（局部图靠它）
-        // 提速：vDSP 点积 + 多核并行（与逐元素累加数值等价）
+        // 提速：vDSP + 多核并行；优先使用预加载的 tiles5（省掉 130MB 磁盘读）
         var fineTiles: [Int: Double] = [:]
         if let heavy = heavy, !query.clsRows.isEmpty {
             progress("细粒度比对…")
-            let queryRows = query.tileRows
             let count = package.designs.count
             var fineScores = [Double](repeating: 0, count: count)
+            let perDesign = 25 * 384
 
-            queryRows.withUnsafeBufferPointer { rowsPtr in
+            heavy.preloadTiles5(offsets: package.designs.map { $0.heavyOffset })
+
+            if let flat = heavy.tiles5FlatCopy, flat.count >= count * perDesign {
+                flat.withUnsafeBufferPointer { flatPtr in
+                    guard let flatBase = flatPtr.baseAddress else { return }
+                    fineScores.withUnsafeMutableBufferPointer { scorePtr in
+                        let chunk = 128
+                        let chunks = (count + chunk - 1) / chunk
+                        DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
+                            let start = chunkIndex * chunk
+                            let end = min(start + chunk, count)
+                            for index in start..<end {
+                                let designBase = flatBase.advanced(by: index * perDesign)
+                                var best = 0.0
+                                for row in query.tileRows {
+                                    row.withUnsafeBufferPointer { rowPtr in
+                                        guard let rowBase = rowPtr.baseAddress else { return }
+                                        for tile in 0..<25 {
+                                            var dot: Float = 0
+                                            vDSP_dotpr(rowBase, 1, designBase + tile * 384, 1, &dot, 384)
+                                            if Double(dot) > best { best = Double(dot) }
+                                        }
+                                    }
+                                    if best >= 0.999 { break }
+                                }
+                                scorePtr[index] = best
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 回退：逐款 mmap 读取（与旧实现一致）
                 fineScores.withUnsafeMutableBufferPointer { scorePtr in
                     let chunk = 128
                     let chunks = (count + chunk - 1) / chunk
@@ -211,17 +242,16 @@ final class GallerySearch {
                             var best = 0.0
                             features.tiles5.withUnsafeBufferPointer { tilePtr in
                                 guard let tileBase = tilePtr.baseAddress else { return }
-                                for row in rowsPtr {
+                                for row in query.tileRows {
                                     row.withUnsafeBufferPointer { rowPtr in
                                         guard let rowBase = rowPtr.baseAddress else { return }
                                         for tile in 0..<tileCount {
-                                            let offset = tile * 384
                                             var dot: Float = 0
-                                            vDSP_dotpr(rowBase, 1, tileBase + offset, 1, &dot, 384)
+                                            vDSP_dotpr(rowBase, 1, tileBase + tile * 384, 1, &dot, 384)
                                             if Double(dot) > best { best = Double(dot) }
                                         }
                                     }
-                                    if best >= 0.999 { return }
+                                    if best >= 0.999 { break }
                                 }
                             }
                             scorePtr[index] = best
