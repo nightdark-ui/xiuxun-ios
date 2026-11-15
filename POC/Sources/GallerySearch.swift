@@ -189,7 +189,7 @@ final class GallerySearch {
         }
 
         // 第三召回通道：查询图 vs 全库 25 个细 tile（局部图靠它）
-        // 提速：vDSP + 多核并行；优先使用预加载的 tiles5（省掉 130MB 磁盘读）
+        // 预加载 tiles5 到内存省磁盘读；计算保持 double 累加，与既有精度一致
         var fineTiles: [Int: Double] = [:]
         if let heavy = heavy, !query.clsRows.isEmpty {
             progress("细粒度比对…")
@@ -198,64 +198,44 @@ final class GallerySearch {
             let perDesign = 25 * 384
 
             heavy.preloadTiles5(offsets: package.designs.map { $0.heavyOffset })
+            let dim = 384
+
+            func score(with tiles: [Float], index: Int) {
+                var best = 0.0
+                for row in query.tileRows {
+                    for tile in 0..<25 {
+                        let offset = tile * dim
+                        var dot = 0.0
+                        for i in 0..<dim {
+                            dot += Double(row[i]) * Double(tiles[offset + i])
+                        }
+                        if dot > best { best = dot }
+                    }
+                    if best >= 0.999 { break }
+                }
+                fineScores[index] = best
+            }
 
             if let flat = heavy.tiles5FlatCopy, flat.count >= count * perDesign {
-                flat.withUnsafeBufferPointer { flatPtr in
-                    guard let flatBase = flatPtr.baseAddress else { return }
-                    fineScores.withUnsafeMutableBufferPointer { scorePtr in
-                        let chunk = 128
-                        let chunks = (count + chunk - 1) / chunk
-                        DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
-                            let start = chunkIndex * chunk
-                            let end = min(start + chunk, count)
-                            for index in start..<end {
-                                let designBase = flatBase.advanced(by: index * perDesign)
-                                var best = 0.0
-                                for row in query.tileRows {
-                                    row.withUnsafeBufferPointer { rowPtr in
-                                        guard let rowBase = rowPtr.baseAddress else { return }
-                                        for tile in 0..<25 {
-                                            var dot: Float = 0
-                                            vDSP_dotpr(rowBase, 1, designBase + tile * 384, 1, &dot, 384)
-                                            if Double(dot) > best { best = Double(dot) }
-                                        }
-                                    }
-                                    if best >= 0.999 { break }
-                                }
-                                scorePtr[index] = best
-                            }
-                        }
+                let chunk = 128
+                let chunks = (count + chunk - 1) / chunk
+                DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
+                    let start = chunkIndex * chunk
+                    let end = min(start + chunk, count)
+                    for index in start..<end {
+                        let slice = Array(flat[(index * perDesign)..<((index + 1) * perDesign)])
+                        score(with: slice, index: index)
                     }
                 }
             } else {
-                // 回退：逐款 mmap 读取（与旧实现一致）
-                fineScores.withUnsafeMutableBufferPointer { scorePtr in
-                    let chunk = 128
-                    let chunks = (count + chunk - 1) / chunk
-                    DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
-                        let start = chunkIndex * chunk
-                        let end = min(start + chunk, count)
-                        for index in start..<end {
-                            guard let features = heavy.features(at: package.designs[index].heavyOffset) else { continue }
-                            let tileCount = features.tiles5.count / 384
-                            guard tileCount > 0 else { continue }
-                            var best = 0.0
-                            features.tiles5.withUnsafeBufferPointer { tilePtr in
-                                guard let tileBase = tilePtr.baseAddress else { return }
-                                for row in query.tileRows {
-                                    row.withUnsafeBufferPointer { rowPtr in
-                                        guard let rowBase = rowPtr.baseAddress else { return }
-                                        for tile in 0..<tileCount {
-                                            var dot: Float = 0
-                                            vDSP_dotpr(rowBase, 1, tileBase + tile * 384, 1, &dot, 384)
-                                            if Double(dot) > best { best = Double(dot) }
-                                        }
-                                    }
-                                    if best >= 0.999 { break }
-                                }
-                            }
-                            scorePtr[index] = best
-                        }
+                let chunk = 128
+                let chunks = (count + chunk - 1) / chunk
+                DispatchQueue.concurrentPerform(iterations: chunks) { chunkIndex in
+                    let start = chunkIndex * chunk
+                    let end = min(start + chunk, count)
+                    for index in start..<end {
+                        guard let features = heavy.features(at: package.designs[index].heavyOffset) else { continue }
+                        score(with: features.tiles5, index: index)
                     }
                 }
             }
