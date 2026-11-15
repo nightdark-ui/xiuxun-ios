@@ -333,13 +333,7 @@ final class GallerySearch {
         do {
             progress("局部匹配…")
 
-            // 细窗高分抬权（对齐安卓）：局部窗口非常像时，直接把 AI 分抬起来
-        for (index, value) in fineTiles where value >= 0.55 {
-            let current = aiScores[index] ?? 0
-            if value > current { aiScores[index] = value }
-        }
-
-        // P0：local5（25 个细 tile 的最高分）前 60 名保送，不看综合排名。
+            // P0：local5（25 个细 tile 的最高分）前 60 名保送，不看综合排名。
             // PC: local_ids = argsort(local_scores)[:60] with score > 0.20
             let localOrdered = ranked.sorted {
                 (fineTiles[$0.index] ?? 0) > (fineTiles[$1.index] ?? 0)
@@ -594,6 +588,10 @@ final class GallerySearch {
             }
             if hit.baseScore > 0 {
                 aiComp = 0.70 * aiComp + 0.30 * PCScoreFinal.aiComponent(hit.baseScore)
+            }
+            // 细窗命中：局部窗口高度相似时，允许它直接参与最终分
+            if let fine = fineTiles[index], fine >= 0.55 {
+                aiComp = max(aiComp, PCScoreFinal.aiComponent(fine))
             }
             hit.structureScore = old
             hit.score = min(0.995, max(0, 0.75 * aiComp + 0.25 * old))
