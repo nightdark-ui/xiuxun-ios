@@ -588,6 +588,11 @@ struct SearchView: View {
                     .font(.system(size: 12))
                     .foregroundColor(UI.textSecondary)
             }
+            Text(timings.text)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(UI.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             if lastConfirmedSampleID != nil {
                 Button { undoLearning() } label: {
                     Text("撤回上次确认").font(.system(size: 11))

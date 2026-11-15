@@ -612,7 +612,18 @@ final class GallerySearch {
                 let finalRank = finalList.firstIndex(where: { $0.design.index == design.index }).map { $0 + 1 }
                 let recallText = recallRank.map { "第\($0)" } ?? "未入围"
                 let finalText = finalRank.map { "第\($0)" } ?? "未入围"
-                note += "；诊断 \(design.code)：召回\(recallText)，最终\(finalText)"
+                if let hit = finalList.first(where: { $0.design.index == design.index }) {
+                    let fine = fineTiles[design.index] ?? 0
+                    let sift = siftScores[design.index] ?? 0
+                    note += String(
+                        format: "；诊断 %@：cls %.2f tile %.2f fine %.2f base %.2f SIFT %.2f 结构 %.2f ai %.2f 最终 %.2f（召回%@ → 最终%@）",
+                        design.code, hit.clsScore, hit.tileScore, fine, hit.baseScore,
+                        sift, hit.structureScore, hit.aiScore, hit.score,
+                        recallText, finalText
+                    )
+                } else {
+                    note += "；诊断 \(design.code)：召回\(recallText)，最终\(finalText)"
+                }
             } else {
                 note += "；诊断 \(diagnostic)：图库里没有这个款号"
             }
