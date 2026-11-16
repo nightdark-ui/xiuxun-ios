@@ -121,7 +121,55 @@ final class GalleryInstaller {
            FileManager.default.fileExists(atPath: custom.appendingPathComponent("index.json").path) {
             return custom
         }
+        if FileManager.default.fileExists(atPath: live.appendingPathComponent("index.json").path) {
+            return live
+        }
+        // 兜底：在沙盒里自动找含 index.json 的文件夹（名字不限、层级最多 3 层）
+        if let found = discoverGalleryRoot() {
+            return found
+        }
         return live
+    }
+
+    /// 在 Documents 下自动查找图库目录（含 index.json），最多 3 层，命中即停止深入
+    func discoverGalleryRoot() -> URL? {
+        let fm = FileManager.default
+        var found: [URL] = []
+
+        func walk(_ url: URL, depth: Int) {
+            guard depth <= 3 else { return }
+            let keys: [URLResourceKey] = [.isDirectoryKey, .nameKey]
+            let contents = (try? fm.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles]
+            )) ?? []
+            for item in contents {
+                let isDir = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
+                guard isDir else { continue }
+                let name = item.lastPathComponent.lowercased()
+                if name == "images" || name == "thumbs" || name == "models" { continue }
+                if fm.fileExists(atPath: item.appendingPathComponent("index.json").path) {
+                    found.append(item)
+                    continue   // 命中就不再深入，避免遍历几千张图
+                }
+                walk(item, depth: depth + 1)
+            }
+        }
+        walk(root, depth: 1)
+
+        // 优先名字里带 gallery 的
+        if let preferred = found.first(where: { $0.lastPathComponent.lowercased().contains("gallery") }) {
+            return preferred
+        }
+        return found.first
+    }
+
+    /// 当前实际使用的图库路径（用于界面显示）
+    var resolvedPathDescription: String {
+        let url = galleryURL
+        if url.path.hasPrefix(root.path) {
+            return "App 内：" + url.path.replacingOccurrences(of: root.path, with: "")
+        }
+        return url.lastPathComponent
     }
 
     var hasGallery: Bool {

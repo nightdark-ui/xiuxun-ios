@@ -309,7 +309,7 @@ struct GalleryLocationSection: View {
             if !message.isEmpty {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Hint(text: "选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）。\niPad 上请先返回上一级、点选文件夹（变灰）后再点右上角「打开」。")
+            Hint(text: "图库文件夹放在「文件 → 我的 iPad（iPhone）→ PicSeek」下面即可，文件夹名字不限，App 会自动查找（需含 index.json / recall.bin / heavy.bin / images）。\niPad 手动选文件夹时：先返回上一级、点选文件夹（变灰）再点右上角「打开」。")
         }
         .fileImporter(
             isPresented: $picking,

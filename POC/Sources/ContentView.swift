@@ -199,7 +199,7 @@ struct ContentView: View {
             } else {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("还没有图库").font(.subheadline).bold()
-                    Text("把图库文件夹（含 index.json、recall.bin、heavy.bin、images、thumbs、models）拷到：")
+                    Text("把图库文件夹（含 index.json、recall.bin、heavy.bin、images、thumbs）放到下面这个 App 文件夹里任意位置即可，名字不限：")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Text("我的 iPhone / PicSeek / Gallery")
