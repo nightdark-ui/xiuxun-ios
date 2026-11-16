@@ -309,12 +309,16 @@ struct GalleryLocationSection: View {
             if !message.isEmpty {
                 Text(message).font(.system(size: 12)).foregroundStyle(.secondary)
             }
-            Hint(text: "选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）")
+            Hint(text: "选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）。\niPad 上请先返回上一级、点选文件夹（变灰）后再点右上角「打开」。")
         }
-        .sheet(isPresented: $picking) {
-            FolderPicker { url in
-                picking = false
-                guard let url else { return }
+        .fileImporter(
+            isPresented: $picking,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 let index = url.appendingPathComponent("index.json")
@@ -326,6 +330,8 @@ struct GalleryLocationSection: View {
                 GalleryInstaller.beginCustomAccess()
                 NotificationCenter.default.post(name: .galleryRootChanged, object: nil)
                 message = "已设为：\(url.lastPathComponent)"
+            case .failure(let error):
+                message = "选择失败：\(error.localizedDescription)"
             }
         }
     }
