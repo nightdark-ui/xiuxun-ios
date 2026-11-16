@@ -280,21 +280,38 @@ struct SearchView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(Array(pendingBatch.enumerated()), id: \.offset) { index, image in
-                                    ZStack(alignment: .topTrailing) {
-                                        Image(uiImage: image)
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 88, height: 88)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        Button {
-                                            pendingBatch.remove(at: index)
-                                        } label: {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.system(size: 18))
-                                                .foregroundColor(.black.opacity(0.55))
+                                    VStack(spacing: 3) {
+                                        ZStack(alignment: .topTrailing) {
+                                            Button {
+                                                cropBatchIndex = index
+                                            } label: {
+                                                Image(uiImage: image)
+                                                    .resizable()
+                                                    .scaledToFill()
+                                                    .frame(width: 88, height: 88)
+                                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                                            .stroke(croppedIndices.contains(index) ? UI.orange : Color.clear,
+                                                                    lineWidth: 2)
+                                                    )
+                                            }
+                                            .buttonStyle(.plain)
+
+                                            Button {
+                                                pendingBatch.remove(at: index)
+                                                croppedIndices.remove(index)
+                                            } label: {
+                                                Image(systemName: "xmark.circle.fill")
+                                                    .font(.system(size: 18))
+                                                    .foregroundColor(.black.opacity(0.55))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .padding(4)
                                         }
-                                        .buttonStyle(.plain)
-                                        .padding(4)
+                                        Text(croppedIndices.contains(index) ? "已框选" : "点此框选")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(croppedIndices.contains(index) ? UI.orange : UI.textSecondary)
                                     }
                                 }
                             }
@@ -344,17 +361,17 @@ struct SearchView: View {
                         }
                     }
                 }
-                if batchPages.count > 1 {
+                if batchMode {
                     batchPager
-                } else if !model.hits.isEmpty {
+                } else if !batchMode, !model.hits.isEmpty {
                     manualCard
                 }
-                if batchPages.count <= 1, let timings = model.timings {
+                if !batchMode, let timings = model.timings {
                     LazyVStack(spacing: 12, pinnedViews: [.sectionHeaders]) {
                         // 结果区锚点：搜索完成后滚动到这里
                         Section {
                             resultGrid
-                            if batchPages.count <= 1, !model.hits.isEmpty { deepReviewAgain }
+                            if !batchMode, !model.hits.isEmpty { deepReviewAgain }
                         } header: {
                             resultHeader(timings)
                                 .padding(.vertical, 6)
@@ -362,7 +379,7 @@ struct SearchView: View {
                         }
                     }
                     .id("resultsAnchor")
-                } else if batchPages.count <= 1 {
+                } else if !batchMode {
                     resultGrid
                 }
             }
@@ -390,6 +407,20 @@ struct SearchView: View {
             MultiImagePicker(limit: 3) { images in
                 showMultiPicker = false
                 if !images.isEmpty { pendingBatch = Array(images.prefix(3)) }
+            }
+        }
+        .sheet(item: Binding(
+            get: { cropBatchIndex.map { BatchCropTarget(index: $0) } },
+            set: { cropBatchIndex = $0?.index }
+        )) { target in
+            if target.index < pendingBatch.count {
+                CropScreen(image: pendingBatch[target.index]) { picked, didCrop in
+                    if target.index < pendingBatch.count {
+                        pendingBatch[target.index] = picked
+                        if didCrop { croppedIndices.insert(target.index) } else { croppedIndices.remove(target.index) }
+                    }
+                    cropBatchIndex = nil
+                }
             }
         }
         .sheet(isPresented: $showCamera) {
@@ -802,6 +833,8 @@ struct SearchView: View {
     @State private var showMultiPicker = false
     @State private var batchRunning = false
     @State private var pendingBatch: [UIImage] = []
+    @State private var croppedIndices: Set<Int> = []
+    @State private var cropBatchIndex: Int?
     @State private var pendingCropped = false
     @State private var pendingDesign: DesignRef?
 
@@ -952,8 +985,23 @@ struct SearchView: View {
         }
     }
 
+    /// 是否处于多图模式（1 页也要显示批量视图）
+    private var batchMode: Bool {
+        batchRunning || !batchPages.isEmpty || !pendingBatch.isEmpty
+    }
+
     private var batchPager: some View {
         VStack(spacing: 8) {
+            if batchPages.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("正在搜索第 1 张…")
+                        .font(.system(size: 13))
+                        .foregroundColor(UI.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+            } else {
             // 顶部固定一行：页码 + 进度 + 清空
             VStack(spacing: 6) {
                 HStack {
@@ -1008,6 +1056,7 @@ struct SearchView: View {
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
             .frame(height: 640)
+            }
         }
     }
 
@@ -1374,4 +1423,10 @@ struct MultiImagePicker: UIViewControllerRepresentable {
             }
         }
     }
+}
+
+/// 待框选的批量图片索引（Identifiable 包装）
+struct BatchCropTarget: Identifiable {
+    let index: Int
+    var id: Int { index }
 }
