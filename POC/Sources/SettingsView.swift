@@ -311,14 +311,10 @@ struct GalleryLocationSection: View {
             }
             Hint(text: "选「我的 iPhone」里存放图库的文件夹（需含 index.json / recall.bin / heavy.bin / images）")
         }
-        .fileImporter(
-            isPresented: $picking,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
+        .sheet(isPresented: $picking) {
+            FolderPicker { url in
+                picking = false
+                guard let url else { return }
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 let index = url.appendingPathComponent("index.json")
@@ -330,8 +326,6 @@ struct GalleryLocationSection: View {
                 GalleryInstaller.beginCustomAccess()
                 NotificationCenter.default.post(name: .galleryRootChanged, object: nil)
                 message = "已设为：\(url.lastPathComponent)"
-            case .failure(let error):
-                message = "选择失败：\(error.localizedDescription)"
             }
         }
     }
@@ -354,6 +348,40 @@ struct DiagnoseSection: View {
                 .textFieldStyle(.roundedBorder)
                 .autocorrectionDisabled()
             Hint(text: "填了款号后，搜索结果备注里会显示该款的召回排名/最终排名和各项分数；留空即关闭")
+        }
+    }
+}
+
+/// 文件夹选择器：iPad 上强制 formSheet（避免 popover 把"打开"按钮挤掉）
+struct FolderPicker: UIViewControllerRepresentable {
+    var onPick: (URL?) -> Void
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.folder], asCopy: false)
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        picker.modalPresentationStyle = .formSheet
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let parent: FolderPicker
+        private var picked = false
+        init(_ parent: FolderPicker) { self.parent = parent }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController,
+                            didPickDocumentsAt urls: [URL]) {
+            picked = true
+            parent.onPick(urls.first)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            if !picked { parent.onPick(nil) }
         }
     }
 }
