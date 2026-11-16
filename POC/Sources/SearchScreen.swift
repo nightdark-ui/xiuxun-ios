@@ -266,6 +266,57 @@ struct SearchView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(model.busy || batchRunning)
+
+                if !pendingBatch.isEmpty {
+                    AppCard {
+                        HStack {
+                            Text("待搜索 \(pendingBatch.count) 张")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            Button("清空") { pendingBatch = [] }
+                                .font(.system(size: 12))
+                                .foregroundColor(UI.textSecondary)
+                        }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(pendingBatch.enumerated()), id: \.offset) { index, image in
+                                    ZStack(alignment: .topTrailing) {
+                                        Image(uiImage: image)
+                                            .resizable()
+                                            .scaledToFill()
+                                            .frame(width: 88, height: 88)
+                                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                        Button {
+                                            pendingBatch.remove(at: index)
+                                        } label: {
+                                            Image(systemName: "xmark.circle.fill")
+                                                .font(.system(size: 18))
+                                                .foregroundColor(.black.opacity(0.55))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .padding(4)
+                                    }
+                                }
+                            }
+                        }
+                        Button {
+                            startBatch(pendingBatch)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "magnifyingglass")
+                                Text("开始搜索（\(pendingBatch.count) 张 · 约 \(pendingBatch.count * 30) 秒）")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(UI.orange)
+                            .foregroundColor(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(model.busy || batchRunning)
+                    }
+                }
                 scopeCard
                 codeRangeCard
                 if model.busy { progressCard }
@@ -328,7 +379,9 @@ struct SearchView: View {
             .id("resultsTop")
         }
         .background(UI.pageBackground.ignoresSafeArea())
-        .overlay(Group { if model.busy { searchOverlay } })
+        .overlay(Group {
+            if model.busy && !(batchRunning && !batchPages.isEmpty) { searchOverlay }
+        })
         .animation(.easeInOut(duration: 0.2), value: model.busy)
         .sheet(isPresented: $showPicker) {
             ImagePicker(sourceType: .photoLibrary) { cropImage = $0 }
@@ -336,7 +389,7 @@ struct SearchView: View {
         .sheet(isPresented: $showMultiPicker) {
             MultiImagePicker(limit: 3) { images in
                 showMultiPicker = false
-                if !images.isEmpty { startBatch(images) }
+                if !images.isEmpty { pendingBatch = Array(images.prefix(3)) }
             }
         }
         .sheet(isPresented: $showCamera) {
@@ -748,6 +801,7 @@ struct SearchView: View {
     @State private var batchIndex = 0
     @State private var showMultiPicker = false
     @State private var batchRunning = false
+    @State private var pendingBatch: [UIImage] = []
     @State private var pendingCropped = false
     @State private var pendingDesign: DesignRef?
 
@@ -875,6 +929,7 @@ struct SearchView: View {
     /// 批量搜索：一张接一张，出一张显示一张
     private func startBatch(_ images: [UIImage]) {
         guard !images.isEmpty, let package = app.package else { return }
+        pendingBatch = []
         batchPages = []
         batchIndex = 0
         batchRunning = true
@@ -892,7 +947,6 @@ struct SearchView: View {
                     index: position + 1
                 )
                 batchPages.append(page)
-                batchIndex = batchPages.count - 1
             }
             batchRunning = false
         }
@@ -900,56 +954,51 @@ struct SearchView: View {
 
     private var batchPager: some View {
         VStack(spacing: 8) {
-            HStack {
-                Text("多图结果 \(batchIndex + 1)/\(batchPages.count)")
-                    .font(.system(size: 13, weight: .semibold))
-                Spacer()
+            // 顶部固定一行：页码 + 进度 + 清空
+            VStack(spacing: 6) {
+                HStack {
+                    Text("多图结果 \(min(batchIndex + 1, max(1, batchPages.count)))/\(batchPages.count)")
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    if batchRunning {
+                        Text("正在搜第 \(batchPages.count + 1) 张…")
+                            .font(.system(size: 11))
+                            .foregroundColor(UI.textSecondary)
+                    }
+                    Button("清空") {
+                        batchPages = []
+                        batchIndex = 0
+                        batchRunning = false
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(UI.orange)
+                }
                 if batchRunning {
-                    ProgressView().scaleEffect(0.7)
+                    ProgressView(value: model.progressValue)
+                        .progressViewStyle(.linear)
+                        .tint(UI.orange)
                 }
-                Button("清空") {
-                    batchPages = []
-                    batchIndex = 0
-                }
-                .font(.system(size: 12))
-                .foregroundColor(UI.orange)
             }
+            .padding(.horizontal, 2)
 
             TabView(selection: $batchIndex) {
                 ForEach(Array(batchPages.enumerated()), id: \.offset) { offset, page in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 10) {
-                                Image(uiImage: page.image)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 64, height: 64)
-                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("第 \(page.index) 张 · 找到 \(page.hits.count) 个")
-                                        .font(.system(size: 13, weight: .semibold))
-                                    if let timings = page.timings {
-                                        Text(String(format: "用时 %.1f 秒", timings.totalMs / 1000))
-                                            .font(.system(size: 11))
-                                            .foregroundColor(UI.textSecondary)
+                        LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) {
+                            Section {
+                                LazyVGrid(columns: columns, spacing: 10) {
+                                    ForEach(Array(page.hits.enumerated()), id: \.offset) { index, hit in
+                                        Button {
+                                            detail = hit
+                                            detailRank = index + 1
+                                        } label: {
+                                            resultCell(hit: hit, rank: index + 1)
+                                        }
+                                        .buttonStyle(.plain)
                                     }
                                 }
-                                Spacer()
-                            }
-                            .padding(8)
-                            .background(UI.orange.opacity(0.07))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                            LazyVGrid(columns: columns, spacing: 10) {
-                                ForEach(Array(page.hits.enumerated()), id: \.offset) { index, hit in
-                                    Button {
-                                        detail = hit
-                                        detailRank = index + 1
-                                    } label: {
-                                        resultCell(hit: hit, rank: index + 1)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                            } header: {
+                                batchHeader(page)
                             }
                         }
                         .padding(.bottom, 12)
@@ -958,8 +1007,47 @@ struct SearchView: View {
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
-            .frame(height: 620)
+            .frame(height: 640)
         }
+    }
+
+    /// 多图结果页的吸顶"客户来图"（与单图一致）
+    private func batchHeader(_ page: BatchPage) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Image(uiImage: page.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 132, height: 132)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("客户来图 · 第 \(page.index) 张")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(UI.textSecondary)
+                    Text("对照下面的第 1 名查看")
+                        .font(.system(size: 13))
+                        .foregroundColor(UI.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(UI.orange.opacity(0.07))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            HStack {
+                Text("找到 \(page.hits.count) 个结果")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                if let timings = page.timings {
+                    Text(String(format: "用时 %.1f 秒", timings.totalMs / 1000))
+                        .font(.system(size: 12))
+                        .foregroundColor(UI.textSecondary)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+        .background(UI.pageBackground)
     }
 
     private func resultCell(hit: SearchHit, rank: Int) -> some View {
