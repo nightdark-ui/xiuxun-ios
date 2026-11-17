@@ -518,6 +518,7 @@ struct SearchView: View {
         let batchCount = pendingBatch.count
         let ready = batchCount > 0 || pendingImage != nil
         return Button {
+            displayLimit = 100
             if batchCount > 0 {
                 startBatch(pendingBatch)
             } else if let pending = pendingImage, let package = app.package {
@@ -763,7 +764,7 @@ struct SearchView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             HStack {
-                Text("找到 \(model.hits.count) 个结果")
+                Text(resultCountText)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(UI.textPrimary)
                 Spacer()
@@ -792,7 +793,17 @@ struct SearchView: View {
         .padding(.top, 4)
     }
 
-    @ViewBuilder
+        /// 结果计数：区分"精排"与"粗排参考"
+    private var resultCountText: String {
+        let refined = model.hits.filter { !$0.isReference }.count
+        let total = model.hits.count
+        if total > refined {
+            return "精排 \(refined) 个 · 参考 \(total - refined) 个"
+        }
+        return "找到 \(total) 个结果"
+    }
+
+@ViewBuilder
     private var resultGrid: some View {
         if model.hits.isEmpty {
             if !model.busy {
@@ -806,12 +817,27 @@ struct SearchView: View {
             }
         } else {
             LazyVGrid(columns: columns, spacing: 10) {
-                ForEach(Array(model.hits.enumerated()), id: \.offset) { index, hit in
+                ForEach(Array(model.hits.prefix(displayLimit).enumerated()), id: \.offset) { index, hit in
                     Button { detail = hit; detailRank = index + 1 } label: {
                         resultCell(hit: hit, rank: index + 1)
                     }
                     .buttonStyle(.plain)
                 }
+            }
+            if model.hits.count > displayLimit {
+                Button {
+                    displayLimit = min(200, displayLimit + 100)
+                } label: {
+                    Text("查看更早的参考结果（还有 \(model.hits.count - displayLimit) 条）")
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(UI.orange.opacity(0.10))
+                        .foregroundColor(UI.orange)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
         }
     }
@@ -846,6 +872,7 @@ struct SearchView: View {
     @State private var manualCode = ""
     @State private var pendingImage: UIImage?
     @State private var detailRank = 0
+    @State private var displayLimit = 100
     @State private var batchPages: [BatchPage] = []
     @State private var batchIndex = 0
     @State private var showMultiPicker = false
@@ -1122,10 +1149,11 @@ struct SearchView: View {
             ZStack(alignment: .topLeading) {
                 CachedThumb(url: app.package?.thumbURL(for: hit.design), height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Text("\(rank)")
+                Text(hit.isReference ? "参考" : "\(rank)")
                     .font(.system(size: 10, weight: .bold))
                     .padding(.horizontal, 5).padding(.vertical, 3)
-                    .background(rank == 1 ? UI.orange : Color.black.opacity(0.55))
+                    .background(hit.isReference ? Color.black.opacity(0.45)
+                                : (rank == 1 ? UI.orange : Color.black.opacity(0.55)))
                     .foregroundColor(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 5))
                     .padding(5)

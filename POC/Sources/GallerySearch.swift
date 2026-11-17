@@ -12,6 +12,8 @@ struct SearchHit {
     var visionScore: Double = 0
     var structureScore: Double = 0
     var aiScore: Double = 0
+    /// 粗排追加的参考结果（未经过精排）
+    var isReference: Bool = false
 }
 
 /// 分阶段耗时
@@ -630,7 +632,35 @@ final class GallerySearch {
 
         timings.totalMs = Date().timeIntervalSince(started) * 1000
         if query.fromCache { note += note.isEmpty ? "查询特征命中缓存" : "；查询特征命中缓存" }
-        return SearchOutcome(hits: Self.dedupeByCode(Array(finalList.prefix(max(1, options.resultCount)))), timings: timings, note: note)
+
+        // 精排结果（保持原样，最多 60）
+        var combined = Self.dedupeByCode(Array(finalList.prefix(max(1, options.resultCount))))
+
+        // 追加"粗排"参考结果（不精排）：补足到 200 条，供 UI 分段展示
+        let refinedCodes = Set(combined.map { $0.design.code })
+        var coarseScored: [(index: Int, score: Double)] = candidates
+            .map { (index: $0.index, score: max($0.cls, $0.tile)) }
+            .sorted { $0.score > $1.score }
+        if coarseScored.count > 200 { coarseScored = Array(coarseScored.prefix(200)) }
+        var existingIndices = Set(combined.map { $0.design.index })
+        for item in coarseScored where combined.count < 200 {
+            guard !existingIndices.contains(item.index) else { continue }
+            let design = package.designs[item.index]
+            guard !refinedCodes.contains(design.code) else { continue }
+            let aiComp = PCScoreFinal.aiComponent(item.score)
+            var hit = SearchHit(
+                design: design,
+                score: min(0.995, 0.75 * aiComp),
+                clsScore: item.score,
+                tileScore: item.score,
+                baseScore: 0
+            )
+            hit.isReference = true
+            combined.append(hit)
+            existingIndices.insert(item.index)
+        }
+
+        return SearchOutcome(hits: combined, timings: timings, note: note)
     }
 
     /// 从编号里取出数字部分（SL9015 → 9015）
