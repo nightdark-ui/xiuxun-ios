@@ -681,15 +681,26 @@ struct SearchView: View {
         AppCard {
             CardHeader(title: "编号范围", trailing: "可留空")
             HStack(spacing: 6) {
-                TextField("如 SL9000", text: $settings.codeFrom)
+                TextField("如 9001", text: $settings.codeFrom)
                     .textFieldStyle(.roundedBorder)
                     .autocapitalization(.allCharacters)
                     .disableAutocorrection(true)
                 Text("—").foregroundColor(UI.textSecondary)
-                TextField("如 SL9999", text: $settings.codeTo)
+                TextField("如 9099", text: $settings.codeTo)
                     .textFieldStyle(.roundedBorder)
                     .autocapitalization(.allCharacters)
                     .disableAutocorrection(true)
+                Button {
+                    settings.codeFrom = ""
+                    settings.codeTo = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(UI.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(settings.codeFrom.isEmpty && settings.codeTo.isEmpty)
+                .opacity((settings.codeFrom.isEmpty && settings.codeTo.isEmpty) ? 0.35 : 1)
             }
             Hint(text: "只搜这个编号区间内的款；留空表示不限制")
         }
