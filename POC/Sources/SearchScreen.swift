@@ -253,13 +253,13 @@ struct SearchView: View {
                     showMultiPicker = true
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "square.stack.3d.up")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(batchRunning ? "多图搜索中…" : "多图搜索（最多 3 张）")
-                            .font(.system(size: 14, weight: .semibold))
+                        Image(systemName: "plus.square.on.square")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("添加图片（最多 3 张，可分别框选）")
+                            .font(.system(size: 13, weight: .semibold))
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 10)
                     .background(UI.orange.opacity(0.10))
                     .foregroundColor(UI.orange)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -316,24 +316,10 @@ struct SearchView: View {
                                 }
                             }
                         }
-                        Button {
-                            startBatch(pendingBatch)
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "magnifyingglass")
-                                Text("开始搜索（\(pendingBatch.count) 张 · 约 \(pendingBatch.count * 30) 秒）")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(UI.orange)
-                            .foregroundColor(.white)
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(model.busy || batchRunning)
                     }
                 }
+
+                startButton
                 scopeCard
                 codeRangeCard
                 if model.busy { progressCard }
@@ -361,7 +347,7 @@ struct SearchView: View {
                         }
                     }
                 }
-                if batchMode {
+                if batchMode && (batchRunning || !batchPages.isEmpty) {
                     batchPager
                 } else if !batchMode, !model.hits.isEmpty {
                     manualCard
@@ -527,6 +513,49 @@ struct SearchView: View {
         .clipShape(RoundedRectangle(cornerRadius: UI.radius, style: .continuous))
     }
 
+    /// 单图 / 多图共用同一个开始按钮
+    private var startButton: some View {
+        let batchCount = pendingBatch.count
+        let ready = batchCount > 0 || pendingImage != nil
+        return Button {
+            if batchCount > 0 {
+                startBatch(pendingBatch)
+            } else if let pending = pendingImage, let package = app.package {
+                // 整图 → 自动裁切开；框选 → 关闭（用户已经框好了）
+                settings.autoCrop = !pendingCropped
+                model.run(image: pending, package: package)
+            }
+        } label: {
+            VStack(spacing: 3) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(startButtonTitle)
+                        .font(.system(size: 15, weight: .bold))
+                }
+                if batchCount >= 2 {
+                    Text("预计约 \(batchCount * 30) 秒")
+                        .font(.system(size: 10))
+                        .opacity(0.85)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(ready ? UI.orange : UI.orange.opacity(0.35))
+            .foregroundColor(.white)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.busy || batchRunning || !ready)
+    }
+
+    private var startButtonTitle: String {
+        let count = pendingBatch.count
+        if model.busy { return "搜索中…" }
+        if count >= 2 { return "开始搜索（\(count) 张）" }
+        return "开始搜图"
+    }
+
     private var queryCard: some View {
         AppCard {
             CardHeader(title: "客户来图")
@@ -576,28 +605,6 @@ struct SearchView: View {
             .contentShape(Rectangle())
             .onTapGesture { if !model.busy { showPicker = true } }
 
-            if let pending = pendingImage {
-                Button {
-                    guard let package = app.package else { return }
-                    // 整图 → 自动裁切开；框选 → 关闭（用户已经框好了）
-                    settings.autoCrop = !pendingCropped
-                    model.run(image: pending, package: package)
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text(model.busy ? "搜索中…" : "开始搜图")
-                            .font(.system(size: 15, weight: .bold))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(UI.orange)
-                    .foregroundColor(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(model.busy)
-            }
         }
     }
 
