@@ -143,6 +143,12 @@ jobs:
       - name: Dump logs
         if: always()
         run: |
+          {
+            echo "### pod install 日志尾部"
+            echo '```'
+            tail -40 POC/pod-install.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY" || true
           for f in POC/pod-install.log POC/build.log; do
             if [ -f "$f" ]; then
               echo "::group::$f (last 80 lines)"
