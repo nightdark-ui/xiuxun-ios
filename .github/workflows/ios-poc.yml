@@ -91,7 +91,16 @@ jobs:
             sudo gem install cocoapods --no-document
           fi
           pod --version
-          pod install --verbose 2>&1 | tee pod-install.log
+          ok=0
+          for i in 1 2 3; do
+            echo "== pod install attempt $i =="
+            if pod install --verbose 2>&1 | tee pod-install.log; then ok=1; break; fi
+            echo "attempt $i failed, cleaning and retrying"
+            rm -rf Pods Podfile.lock
+            sleep 15
+          done
+          if [ "$ok" != "1" ]; then echo "pod install failed after 3 attempts"; tail -60 pod-install.log; exit 1; fi
+          test -d Pods
 
       - name: Verify workspace and scheme
         working-directory: POC
