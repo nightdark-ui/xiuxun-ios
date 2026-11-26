@@ -1255,6 +1255,7 @@ struct ResultDetail: View {
     @State private var shareItem: UIImage?
     @State private var detailNote = ""
     @State private var lastConfirmedSampleID: String?
+    @State private var relatedTarget: RelatedOpen?
 
     /// 类似款（人工整理，仅展示，不影响排序）
     private var relatedHits: [SearchHit] {
