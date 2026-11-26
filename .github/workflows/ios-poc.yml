@@ -138,6 +138,7 @@ jobs:
             s.static_framework = true
             s.module_name      = 'onnxruntime_objc'
             s.source_files     = 'objectivec/**/*.{h,m,mm}'
+            s.exclude_files    = 'objectivec/test/**/*'
             s.public_header_files = 'objectivec/include/*.h'
             s.requires_arc     = true
             s.dependency 'onnxruntime-c'
