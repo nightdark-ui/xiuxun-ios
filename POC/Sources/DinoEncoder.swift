@@ -41,7 +41,22 @@ final class DinoEncoder {
         let env = try ORTEnv(loggingLevel: .error)
         let options = try ORTSessionOptions()
         try options.setIntraOpNumThreads(Int32(max(1, threads)))
-        let session = try ORTSession(env: env, modelPath: url.path, sessionOptions: options)
+        // ONNX Runtime 1.23 的 LayerNorm 融合会引用旧模型里不存在的节点名，
+        // 导致会话初始化直接抛异常（SimplifiedLayerNormFusion）。这里显式禁用该优化。
+        _ = try? options.addConfigEntry(withKey: "optimization.disable_specified_optimizers",
+                                        value: "SimplifiedLayerNormFusion,LayerNormFusion")
+        let session: ORTSession
+        do {
+            session = try ORTSession(env: env, modelPath: url.path, sessionOptions: options)
+        } catch {
+            // 兜底：退到基础优化级别（跳过所有扩展融合）再试一次
+            let fallback = try ORTSessionOptions()
+            try fallback.setIntraOpNumThreads(Int32(max(1, threads)))
+            if let basic = ORTGraphOptimizationLevel(rawValue: 1) {
+                _ = try? fallback.setGraphOptimizationLevel(basic)
+            }
+            session = try ORTSession(env: env, modelPath: url.path, sessionOptions: fallback)
+        }
         guard let first = try session.inputNames().first else {
             throw EncoderError.badModel("模型没有输入")
         }
