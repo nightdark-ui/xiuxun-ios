@@ -196,6 +196,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
+          status=$?
+          if [ "$status" != "0" ]; then
+            echo "::error::BUILD FAILED (exit $status)"
+            grep -aE "error:|fatal error:" build.log | head -8 | while IFS= read -r line; do
+              echo "::error::${line:0:280}"
+            done
+            exit "$status"
+          fi
 
       - name: Package IPA
         working-directory: POC
