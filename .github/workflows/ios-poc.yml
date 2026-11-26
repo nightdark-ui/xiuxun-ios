@@ -87,8 +87,8 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v pod >/dev/null 2>&1; then
-            echo "installing cocoapods"
-            sudo gem install cocoapods --no-document
+            echo "installing cocoapods via homebrew"
+            brew install cocoapods || sudo gem install cocoapods --no-document
           fi
           pod --version
           ok=0
