@@ -99,7 +99,14 @@ jobs:
             rm -rf Pods Podfile.lock
             sleep 15
           done
-          if [ "$ok" != "1" ]; then echo "pod install failed after 3 attempts"; tail -60 pod-install.log; exit 1; fi
+          if [ "$ok" != "1" ]; then
+            echo "pod install failed after 3 attempts"
+            echo "::error::pod install failed after 3 attempts"
+            grep -aE "Error|error|failed|\[!\]|Unable" pod-install.log | tail -12 | while IFS= read -r line; do
+              echo "::error::${line:0:280}"
+            done
+            exit 1
+          fi
           test -d Pods
 
       - name: Verify workspace and scheme
