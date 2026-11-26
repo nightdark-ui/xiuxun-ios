@@ -186,6 +186,7 @@ jobs:
         working-directory: POC
         run: |
           set -o pipefail
+          set +e
           xcodebuild \
             -workspace XiuxunPOC.xcworkspace \
             -scheme XiuxunPOC \
@@ -197,6 +198,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             build 2>&1 | tee build.log
           status=$?
+          set -e
           if [ "$status" != "0" ]; then
             echo "::error::BUILD FAILED (exit $status)"
             { grep -aE "error:|fatal error:|BUILD FAILED|ld: " build.log | head -10 || true; tail -8 build.log; } | while IFS= read -r line; do
