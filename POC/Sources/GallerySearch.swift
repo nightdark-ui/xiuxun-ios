@@ -109,6 +109,11 @@ final class GallerySearch {
         )
         timings.encodeMs = Date().timeIntervalSince(encodeStart) * 1000
 
+        // 「同花对齐」投影头：查询 CLS 先变换，图库侧同步变换（可关闭）
+        let pairClsRows: [[Float]] = PairHead.shared.active
+            ? PairHead.shared.transformRows(query.clsRows)
+            : query.clsRows
+
         // ---------- 2. 召回 ----------
         progress("扫描图库…")
         let recallStart = Date()
@@ -135,6 +140,7 @@ final class GallerySearch {
             return fromPrefix.isEmpty ? (toPrefix.isEmpty ? nil : toPrefix) : fromPrefix
         }()
 
+        let headBase: [Float]? = PairHead.shared.transformedBase(package: package)
         package.withRecallPointer { base, count in
             for index in 0..<count {
                 if shouldCancel() { return }
@@ -147,11 +153,21 @@ final class GallerySearch {
                     if let high = toNumber, number > high { continue }
                 }
                 let record = base.advanced(by: index * GalleryPackage.recallFloats)
-                let clsResult = Self.bestCosineWithRow(
-                    queryRows: query.clsRows,
-                    target: record,
-                    rows: GalleryPackage.clsRows
-                )
+                let clsResult: (score: Double, row: Int)
+                if let hb = headBase {
+                    clsResult = Self.bestCosineWithRow(
+                        queryRows: pairClsRows,
+                        target: hb,
+                        targetOffset: index * GalleryPackage.clsRows * Self.dim,
+                        rows: GalleryPackage.clsRows
+                    )
+                } else {
+                    clsResult = Self.bestCosineWithRow(
+                        queryRows: pairClsRows,
+                        target: record,
+                        rows: GalleryPackage.clsRows
+                    )
+                }
                 let clsScore = clsResult.score
                 // 设计侧 5 行对应 5 个尺度，记下命中的那个用于 dense
                 let designFraction = DinoEncoder.designFractions[
@@ -196,7 +212,7 @@ final class GallerySearch {
         // 第三召回通道：查询图 vs 全库 25 个细 tile（局部图靠它）
         // 预加载 tiles5 到内存省磁盘读；计算保持 double 累加，与既有精度一致
         var fineTiles: [Int: Double] = [:]
-        if let heavy = heavy, !query.clsRows.isEmpty {
+        if let heavy = heavy, !pairClsRows.isEmpty {
             progress("细粒度比对…")
             let count = package.designs.count
             var fineScores = [Double](repeating: 0, count: count)
@@ -546,7 +562,7 @@ final class GallerySearch {
         }
         timings.siftMs = Date().timeIntervalSince(siftStart) * 1000
 
-        let refMap = LearningStore.shared.boostMap(queryRows: query.clsRows)
+        let refMap = LearningStore.shared.boostMap(queryRows: pairClsRows)
 
         // 学习样本强制入围：人工确认过的款即使不在前 N，也参与最终打分
         if !refMap.isEmpty {
@@ -689,6 +705,36 @@ final class GallerySearch {
     }
 
     /// 返回最佳余弦及其对应的目标行号（设计侧尺度）
+    private static func bestCosineWithRow(
+        queryRows: [[Float]],
+        target: [Float],
+        targetOffset: Int,
+        rows: Int
+    ) -> (score: Double, row: Int) {
+        var best = -1.0
+        var bestRow = 0
+        target.withUnsafeBufferPointer { buffer in
+            for row in queryRows {
+                var queryNorm: Float = 0
+                vDSP_svesq(row, 1, &queryNorm, vDSP_Length(dim))
+                let normQ = Double(queryNorm).squareRoot()
+                for r in 0..<rows {
+                    let pointer = buffer.baseAddress!.advanced(by: targetOffset + r * dim)
+                    var dot: Float = 0
+                    vDSP_dotpr(row, 1, pointer, 1, &dot, vDSP_Length(dim))
+                    var targetNorm: Float = 0
+                    vDSP_svesq(pointer, 1, &targetNorm, vDSP_Length(dim))
+                    let value = Double(dot) / max(1e-9, normQ * Double(targetNorm).squareRoot())
+                    if value > best {
+                        best = value
+                        bestRow = r
+                    }
+                }
+            }
+        }
+        return (max(0, best), bestRow)
+    }
+
     private static func bestCosineWithRow(
         queryRows: [[Float]],
         target: UnsafePointer<Float>,

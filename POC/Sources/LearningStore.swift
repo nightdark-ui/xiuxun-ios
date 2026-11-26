@@ -197,17 +197,29 @@ final class LearningStore: ObservableObject {
 
     // MARK: - 打分
 
+    private var pairClsCache: [String: [Float]] = [:]
+
+    /// 样本 CLS 与查询处于同一特征空间（投影头开启时需同步变换）
+    private func pairedCls(of sample: ReferenceSample) -> [Float] {
+        guard PairHead.shared.active else { return sample.cls }
+        if let cached = pairClsCache[sample.sampleID] { return cached }
+        let transformed = PairHead.shared.transformFlat(sample.cls)
+        pairClsCache[sample.sampleID] = transformed
+        return transformed
+    }
+
     /// 参考学习分：查询 CLS 与样本 CLS 的最大余弦（0…1）
     func referenceScore(queryRows: [[Float]], uuid: String) -> Double {
         let refs = samples(for: uuid)
         guard !refs.isEmpty else { return -1 }
         var best = -1.0
         for sample in refs where sample.clsRows > 0 {
+            let cls = pairedCls(of: sample)
             for rowIndex in 0..<sample.clsRows {
                 let start = rowIndex * 384
-                guard start + 384 <= sample.cls.count else { break }
+                guard start + 384 <= cls.count else { break }
                 for query in queryRows {
-                    let cosine = Self.cosine(query, sample.cls, start)
+                    let cosine = Self.cosine(query, cls, start)
                     if cosine > best { best = cosine }
                 }
             }
@@ -245,6 +257,7 @@ final class LearningStore: ObservableObject {
         for sample in samples {
             let rows = sample.clsRows
             guard rows > 0 else { continue }
+            let sampleCls = pairedCls(of: sample)
             var best = 0.0
             for query in queryRows {
                 for row in 0..<rows {

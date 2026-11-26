@@ -96,6 +96,18 @@ struct SettingsView: View {
                         .font(.system(size: 15))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
+                    Toggle("同花对齐（实验：同花不同底布更靠前）", isOn: Binding(
+                        get: { PairHead.shared.enabled },
+                        set: { PairHead.shared.enabled = $0 }
+                    ))
+                    .font(.system(size: 15))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    Text("开启后搜索用「同花对齐」特征；关闭则完全回到原算法。随时可切换对比。")
+                        .font(.system(size: 11))
+                        .foregroundColor(UI.textSecondary)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 8)
                 }
 
                 group("参考学习") { LearningSection(app: app) }
