@@ -116,6 +116,7 @@ jobs:
             s.author           = 'Microsoft'
             s.source           = { :path => '.' }
             s.platform         = :ios, '15.0'
+            s.static_framework = true
             s.vendored_frameworks = 'onnxruntime.xcframework'
             s.preserve_paths   = 'onnxruntime.xcframework', 'Headers/*.h'
             s.source_files     = 'Headers/*.h'
@@ -134,6 +135,7 @@ jobs:
             s.author           = 'Microsoft'
             s.source           = { :path => '.' }
             s.platform         = :ios, '15.0'
+            s.static_framework = true
             s.module_name      = 'onnxruntime_objc'
             s.source_files     = 'objectivec/**/*.{h,m,mm}'
             s.public_header_files = 'objectivec/include/*.h'

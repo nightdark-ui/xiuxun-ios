@@ -1,6 +1,4 @@
 platform :ios, '15.0'
-use_frameworks!
-
 target 'XiuxunPOC' do
   pod 'onnxruntime-c', :path => 'Vendor/onnxruntime-c'
   pod 'onnxruntime-objc', :path => 'Vendor/onnxruntime-objc'
