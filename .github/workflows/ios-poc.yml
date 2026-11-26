@@ -82,6 +82,71 @@ jobs:
           ls -la
           test -f XiuxunPOC.xcodeproj/project.pbxproj
 
+      - name: Fetch ONNX Runtime pods
+        working-directory: POC
+        run: |
+          set -euo pipefail
+          base="https://github.com/BasedHardware/omi/releases/download/mobile-build-deps-onnx-1.23.0"
+          mkdir -p Vendor
+          for name in c objc; do
+            url="$base/pod-archive-onnxruntime-$name-1.23.0.zip"
+            ok=0
+            for attempt in 1 2 3; do
+              echo "== $name attempt $attempt =="
+              if curl -fL --retry 3 --retry-delay 5 --max-time 600 -o "Vendor/$name.zip" "$url"; then ok=1; break; fi
+              if curl -fL --retry 3 --retry-delay 5 --max-time 600 -o "Vendor/$name.zip" "https://ghfast.top/$url"; then ok=1; break; fi
+              sleep 10
+            done
+            if [ "$ok" != "1" ]; then echo "download $name failed"; exit 1; fi
+          done
+          rm -rf Vendor/onnxruntime-c Vendor/onnxruntime-objc
+          mkdir -p Vendor/onnxruntime-c Vendor/onnxruntime-objc
+          unzip -q Vendor/c.zip -d Vendor/onnxruntime-c
+          unzip -q Vendor/objc.zip -d Vendor/onnxruntime-objc
+          ls Vendor/onnxruntime-c
+          ls Vendor/onnxruntime-objc
+
+          cat > Vendor/onnxruntime-c/onnxruntime-c.podspec <<'PODSPEC'
+          Pod::Spec.new do |s|
+            s.name             = 'onnxruntime-c'
+            s.version          = '1.23.0'
+            s.summary          = 'ONNX Runtime C library'
+            s.homepage         = 'https://onnxruntime.ai'
+            s.license          = { :type => 'MIT' }
+            s.author           = 'Microsoft'
+            s.source           = { :path => '.' }
+            s.platform         = :ios, '15.0'
+            s.vendored_frameworks = 'onnxruntime.xcframework'
+            s.preserve_paths   = 'onnxruntime.xcframework', 'Headers/*.h'
+            s.source_files     = 'Headers/*.h'
+            s.public_header_files = 'Headers/*.h'
+            s.pod_target_xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_TARGET_SRCROOT}/Headers"' }
+          end
+          PODSPEC
+
+          cat > Vendor/onnxruntime-objc/onnxruntime-objc.podspec <<'PODSPEC'
+          Pod::Spec.new do |s|
+            s.name             = 'onnxruntime-objc'
+            s.version          = '1.23.0'
+            s.summary          = 'ONNX Runtime Objective-C bindings'
+            s.homepage         = 'https://onnxruntime.ai'
+            s.license          = { :type => 'MIT' }
+            s.author           = 'Microsoft'
+            s.source           = { :path => '.' }
+            s.platform         = :ios, '15.0'
+            s.module_name      = 'onnxruntime_objc'
+            s.source_files     = 'objectivec/**/*.{h,m,mm}'
+            s.public_header_files = 'objectivec/include/*.h'
+            s.requires_arc     = true
+            s.dependency 'onnxruntime-c'
+            s.libraries        = 'c++'
+            s.pod_target_xcconfig = {
+              'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/onnxruntime-c/Headers" "${PODS_TARGET_SRCROOT}/objectivec" "${PODS_TARGET_SRCROOT}/objectivec/include"',
+              'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17'
+            }
+          end
+          PODSPEC
+
       - name: Install pods
         working-directory: POC
         run: |
