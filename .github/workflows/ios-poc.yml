@@ -199,7 +199,7 @@ jobs:
           status=$?
           if [ "$status" != "0" ]; then
             echo "::error::BUILD FAILED (exit $status)"
-            grep -aE "error:|fatal error:" build.log | head -8 | while IFS= read -r line; do
+            { grep -aE "error:|fatal error:|BUILD FAILED|ld: " build.log | head -10 || true; tail -8 build.log; } | while IFS= read -r line; do
               echo "::error::${line:0:280}"
             done
             exit "$status"
