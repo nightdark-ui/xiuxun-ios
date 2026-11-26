@@ -844,6 +844,7 @@ struct SearchView: View {
 
     @State private var lastConfirmedCode: String?
     @State private var lastConfirmedSampleID: String?
+    @State private var relatedTarget: RelatedOpen?
 
     /// 撤回最近一次确认
     private func undoLearning() {
@@ -1238,6 +1239,12 @@ extension SearchHit: Identifiable {
 }
 
 /// 结果详情（含保存/分享）
+/// 详情页里打开的"类似款"
+struct RelatedOpen: Identifiable {
+    let id: String
+    let hit: SearchHit
+}
+
 struct ResultDetail: View {
     let hit: SearchHit
     let package: GalleryPackage?
@@ -1248,6 +1255,54 @@ struct ResultDetail: View {
     @State private var shareItem: UIImage?
     @State private var detailNote = ""
     @State private var lastConfirmedSampleID: String?
+
+    /// 类似款（人工整理，仅展示，不影响排序）
+    private var relatedHits: [SearchHit] {
+        guard let package = package else { return [] }
+        let codes = RelatedDesigns.related(to: hit.design.code)
+        guard !codes.isEmpty else { return [] }
+        var lookup: [String: DesignRef] = [:]
+        for design in package.designs { lookup[design.code.uppercased()] = design }
+        return codes.compactMap { code in
+            guard let design = lookup[code], design.featureUUID != hit.design.featureUUID else { return nil }
+            return SearchHit(design: design, score: 0, clsScore: 0, tileScore: 0, baseScore: 0)
+        }
+    }
+
+    @ViewBuilder
+    private var relatedSection: some View {
+        let items = relatedHits
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("类似款（人工整理）")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(UI.textSecondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(items.prefix(6), id: \.design.featureUUID) { item in
+                            Button {
+                                relatedTarget = RelatedOpen(id: item.design.featureUUID, hit: item)
+                            } label: {
+                                VStack(spacing: 3) {
+                                    CachedThumb(url: package?.thumbURL(for: item.design), height: 84)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    Text(item.design.code)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(UI.textPrimary)
+                                }
+                                .frame(width: 84)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(height: 108)
+            }
+            .sheet(item: $relatedTarget) { target in
+                ResultDetail(hit: target.hit, package: package, queryImage: queryImage, rank: 0)
+            }
+        }
+    }
 
     private func confirmFromDetail() {
         guard let features = QueryEncoder.lastFeatures else {
@@ -1331,6 +1386,8 @@ struct ResultDetail: View {
                             }
                         }
                     }
+
+                    relatedSection
 
                     AppCard {
                         row("CLS", String(format: "%.3f", hit.clsScore))
