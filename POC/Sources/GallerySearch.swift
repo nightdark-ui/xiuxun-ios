@@ -1,4 +1,4 @@
-﻿import UIKit
+import UIKit
 import Foundation
 import Accelerate
 
@@ -850,7 +850,7 @@ final class GallerySearch {
                 best[hit.design.code] = hit
             }
         }
-        return order.compactMap { best[] }
+        return order.compactMap { best[$0] }
     }
 
     /// SL 底布系列键：取编号前两位，如 SL30xxx -> "SL30"
