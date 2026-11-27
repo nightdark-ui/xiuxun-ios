@@ -47,12 +47,14 @@ enum UpdateError: LocalizedError {
     case notInstalled
     case badIndex
     case needFullReload(String)
+    case badIndexWithDetail(String)
 
     var errorDescription: String? {
         switch self {
         case .notInstalled: return "还没有导入图库"
         case .badIndex: return "服务端的 index.json 无法解析"
         case .needFullReload(let reason): return "需要整包重下：\(reason)"
+        case .badIndexWithDetail(let preview): return "服务端返回的不是图库索引，请检查地址（应形如 http://192.168.50.60:8779）。返回内容开头：\(preview)"
         }
     }
 }
@@ -77,13 +79,21 @@ final class GalleryUpdater {
         guard installer.hasGallery else { throw UpdateError.notInstalled }
         let local = try GalleryPackage(root: installer.galleryURL)
 
-        guard let base = URL(string: serverBase.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+        // 地址容错：补 http://、去尾部斜杠、去掉误加的 /files 或 /index.json
+        var text = serverBase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.lowercased().hasPrefix("http") { text = "http://" + text }
+        while text.hasSuffix("/") { text.removeLast() }
+        if text.lowercased().hasSuffix("/index.json") { text = String(text.dropLast(11)) }
+        if text.lowercased().hasSuffix("/files") { text = String(text.dropLast(6)) }
+        while text.hasSuffix("/") { text.removeLast() }
+        guard let base = URL(string: text) else {
             throw UpdateError.badIndex
         }
         let indexData = try Http.get(base.appendingPathComponent("files").appendingPathComponent("index.json"))
         guard let json = try JSONSerialization.jsonObject(with: indexData) as? [String: Any],
               let rawDesigns = json["designs"] as? [[String: Any]] else {
-            throw UpdateError.badIndex
+            let preview = String(data: indexData.prefix(60), encoding: .utf8) ?? "(二进制)"
+            throw UpdateError.badIndexWithDetail(preview)
         }
 
         var serverDesigns: [ServerDesign] = []
