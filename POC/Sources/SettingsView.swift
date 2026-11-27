@@ -127,8 +127,6 @@ struct SettingsView: View {
                         .padding(.bottom, 8)
                 }
 
-                group("图库更新（增量）") { GalleryUpdateSection(app: app) }
-
                 group("参考学习") { LearningSection(app: app) }
 
                 group("诊断") {
