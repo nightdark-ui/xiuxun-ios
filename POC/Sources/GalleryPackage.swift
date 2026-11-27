@@ -104,8 +104,17 @@ final class GalleryPackage {
         guard FileManager.default.fileExists(atPath: recallURL.path) else {
             throw GalleryError.missingFile("recall.bin")
         }
-        let mapped = try Data(contentsOf: recallURL, options: .mappedIfSafe)
+        var mapped = try Data(contentsOf: recallURL, options: .mappedIfSafe)
         let expected = designs.count * Self.recallBytes
+        // 自愈：追加更新中断会留下多余尾部数据，截断回应有大小（前 N 条记录仍然完好）
+        if mapped.count > expected {
+            if let handle = try? FileHandle(forWritingTo: recallURL) {
+                try? handle.truncate(atOffset: UInt64(expected))
+                try? handle.close()
+                mapped = (try? Data(contentsOf: recallURL, options: .mappedIfSafe)) ?? mapped
+                print("[gallery] recall.bin 已截断到 \(expected) 字节")
+            }
+        }
         guard mapped.count >= expected else {
             throw GalleryError.badIndex(
                 "recall.bin 大小 (mapped.count) 与款数 (designs.count) 不符（应为 (expected)）"
