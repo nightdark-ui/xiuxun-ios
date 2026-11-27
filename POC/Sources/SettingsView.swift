@@ -127,6 +127,8 @@ struct SettingsView: View {
                         .padding(.bottom, 8)
                 }
 
+                group("图库更新（增量）") { GalleryUpdateSection(app: app) }
+
                 group("参考学习") { LearningSection(app: app) }
 
                 group("诊断") {
@@ -418,5 +420,70 @@ struct FolderPicker: UIViewControllerRepresentable {
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             if !picked { parent.onPick(nil) }
         }
+    }
+}
+
+/// 图库增量更新：填 PC 地址 → 检查 → 只下载新增的款
+struct GalleryUpdateSection: View {
+    @ObservedObject var app: AppState
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var note = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("电脑地址").font(.system(size: 15)).foregroundColor(UI.textPrimary)
+            TextField("如 http://192.168.1.10:8779", text: $app.serverAddress)
+                .font(.system(size: 14))
+                .textFieldStyle(.plain)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .keyboardType(.URL)
+            Text("先在电脑上双击「3-启动更新服务.bat」，把窗口显示的地址填到这里")
+                .font(.system(size: 11))
+                .foregroundColor(UI.textSecondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    app.checkUpdate()
+                } label: {
+                    Text(app.updating ? "检查中…" : "检查更新")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(UI.orange.opacity(0.15))
+                        .foregroundColor(UI.orange)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(app.updating)
+
+                Button {
+                    app.applyUpdate()
+                } label: {
+                    Text("立即更新")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(app.updateReady ? UI.orange : UI.orange.opacity(0.25))
+                        .foregroundColor(.white)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!app.updateReady || app.updating)
+            }
+
+            if !app.updateSummary.isEmpty {
+                Text(app.updateSummary).font(.system(size: 12)).foregroundColor(UI.textSecondary)
+            }
+            if app.updating {
+                ProgressView(value: min(1, max(0, app.progress.fraction)))
+                Text(app.progress.phase).font(.system(size: 11)).foregroundColor(UI.textSecondary)
+            }
+            if !app.errorText.isEmpty {
+                Text(app.errorText).font(.system(size: 11)).foregroundColor(.red)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
     }
 }
