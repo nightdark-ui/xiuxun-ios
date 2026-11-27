@@ -40,6 +40,7 @@ struct ServerDesign {
     let library: String
     let image: String
     let heavyOffset: Int64
+    var primary: Int = 0
 }
 
 enum UpdateError: LocalizedError {
@@ -95,7 +96,8 @@ final class GalleryUpdater {
                     title: item["title"] as? String ?? "",
                     library: item["library"] as? String ?? "",
                     image: item["image"] as? String ?? "",
-                    heavyOffset: (item["heavy_offset"] as? NSNumber)?.int64Value ?? 0
+                    heavyOffset: (item["heavy_offset"] as? NSNumber)?.int64Value ?? 0,
+                    primary: item["primary"] as? Int ?? 0
                 )
             )
         }
@@ -120,6 +122,7 @@ final class GalleryUpdater {
             return server.code != design.code
                 || server.title != design.title
                 || server.library != design.library
+                || server.primary != (design.isPrimary ? 1 : 0)
         }.count
 
         // 能否追加：本地款在服务端里顺序完全一致，且新增的都在末尾
