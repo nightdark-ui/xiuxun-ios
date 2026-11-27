@@ -11,6 +11,7 @@ struct DesignRef {
     let featureUUID: String
     let heavyOffset: Int64
     let siftCount: Int
+    var isPrimary: Bool = false
 }
 
 /// 读取 PC/安卓 生成的图库包（xiuxun-android-index v1）。
@@ -92,7 +93,8 @@ final class GalleryPackage {
                     image: item["image"] as? String ?? "",
                     featureUUID: item["feature_uuid"] as? String ?? "",
                     heavyOffset: (item["heavy_offset"] as? NSNumber)?.int64Value ?? 0,
-                    siftCount: item["sift_count"] as? Int ?? 0
+                    siftCount: item["sift_count"] as? Int ?? 0,
+                    isPrimary: (item["primary"] as? Int ?? 0) == 1
                 )
             )
         }

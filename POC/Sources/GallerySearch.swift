@@ -835,14 +835,22 @@ final class GallerySearch {
 
     /// 同一款号只保留分数最高的一条（图库存在一款多图）
     static func dedupeByCode(_ hits: [SearchHit]) -> [SearchHit] {
-        var seen = Set<String>()
-        var output: [SearchHit] = []
-        output.reserveCapacity(hits.count)
-        for hit in hits where !seen.contains(hit.design.code) {
-            seen.insert(hit.design.code)
-            output.append(hit)
+        // 同款保留「主图」那条（图库包里 primary=1），没有主图标记时保留分数最高的
+        var order: [String] = []
+        var best: [String: SearchHit] = [:]
+        for hit in hits {
+            guard let existing = best[hit.design.code] else {
+                best[hit.design.code] = hit
+                order.append(hit.design.code)
+                continue
+            }
+            if hit.design.isPrimary && !existing.design.isPrimary {
+                best[hit.design.code] = hit
+            } else if hit.design.isPrimary == existing.design.isPrimary && hit.score > existing.score {
+                best[hit.design.code] = hit
+            }
         }
-        return output
+        return order.compactMap { best[] }
     }
 
     /// SL 底布系列键：取编号前两位，如 SL30xxx -> "SL30"
