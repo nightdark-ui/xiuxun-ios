@@ -652,6 +652,37 @@ final class GallerySearch {
         // 精排结果（保持原样，最多 60）
         var combined = Self.dedupeByCode(Array(finalList.prefix(max(1, options.resultCount))))
 
+        // 粗排保底：粗排前 3 名若不在最终前 20，按粗排位置补进前列
+        if AppSettings.shared.coarseBoost {
+            let coarseOrder = candidates
+                .map { (index: $0.index, score: Self.combined($0.cls, $0.tile)) }
+                .sorted { $0.score > $1.score }
+            var inserted = Set<Int>()
+            for (pos, item) in coarseOrder.prefix(3).enumerated() {
+                let design = package.designs[item.index]
+                let headCount = min(20, combined.count)
+                if combined.prefix(headCount).contains(where: { $0.design.index == item.index || $0.design.code == design.code }) {
+                    continue
+                }
+                if inserted.contains(item.index) { continue }
+                let aiComp = PCScoreFinal.aiComponent(item.score)
+                let hit = SearchHit(
+                    design: design,
+                    score: min(0.995, 0.75 * aiComp),
+                    clsScore: item.score,
+                    tileScore: item.score,
+                    baseScore: 0
+                )
+                let target = min(combined.count, max(0, pos))
+                combined.insert(hit, at: target)
+                inserted.insert(item.index)
+                combined = Self.dedupeByCode(combined)
+            }
+            if !inserted.isEmpty {
+                note += note.isEmpty ? "；粗排保底补入 \(inserted.count) 个" : "；粗排保底补入 \(inserted.count) 个"
+            }
+        }
+
         // 追加"粗排"参考结果（不精排）：补足到 200 条，供 UI 分段展示
         let refinedCodes = Set(combined.map { $0.design.code })
         var coarseScored: [(index: Int, score: Double)] = candidates

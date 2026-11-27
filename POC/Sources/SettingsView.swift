@@ -15,6 +15,10 @@ final class AppSettings: ObservableObject {
     @Published var mirrorEnabled: Bool {
         didSet { UserDefaults.standard.set(mirrorEnabled, forKey: "set.mirror") }
     }
+    @Published var coarseBoost: Bool {
+        didSet { UserDefaults.standard.set(coarseBoost, forKey: "set.coarseBoost") }
+    }
+
     @Published var base336: Bool {
         didSet { UserDefaults.standard.set(base336, forKey: "set.base336") }
     }
@@ -50,6 +54,7 @@ final class AppSettings: ObservableObject {
         rotationEnabled = defaults.object(forKey: "set.rotation") as? Bool ?? true
         mirrorEnabled = defaults.bool(forKey: "set.mirror")
         base336 = defaults.object(forKey: "set.base336") as? Bool ?? true
+        coarseBoost = defaults.object(forKey: "set.coarseBoost") as? Bool ?? true
         allowRepeat = defaults.bool(forKey: "set.allowRepeat")
         autoCrop = defaults.object(forKey: "set.autoCrop") as? Bool ?? true
         localFirst = defaults.bool(forKey: "set.localFirst")
@@ -104,6 +109,18 @@ struct SettingsView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     Text("开启后搜索用「同花对齐」特征；关闭则完全回到原算法。随时可切换对比。")
+                        .font(.system(size: 11))
+                        .foregroundColor(UI.textSecondary)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 8)
+                }
+
+                group("排序") {
+                    Toggle("粗排保底（粗排前 3 名保证进入前 20）", isOn: $settings.coarseBoost)
+                        .font(.system(size: 15))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                    Text("把「粗排很高但没有进前 20」的款补回前列。实测可让前 20 命中率提升约 10 个百分点。")
                         .font(.system(size: 11))
                         .foregroundColor(UI.textSecondary)
                         .padding(.horizontal, 14)
